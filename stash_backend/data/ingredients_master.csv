@@ -1,0 +1,12 @@
+name,category,default_unit
+Tomato,Vegetable,grams
+Onion,Vegetable,grams
+Potato,Vegetable,grams
+Chicken,Meat,grams
+Fish,Meat,grams
+Milk,Dairy,ml
+Curd,Dairy,ml
+Rice,Grain,grams
+Coconut Oil,Oil,ml
+Mustard Seeds,Spice,grams
+Chilli Powder,Spice,grams
