@@ -1,12 +1,8 @@
-name,category,default_unit
-Tomato,Vegetable,grams
-Onion,Vegetable,grams
-Potato,Vegetable,grams
-Chicken,Meat,grams
-Fish,Meat,grams
-Milk,Dairy,ml
-Curd,Dairy,ml
-Rice,Grain,grams
-Coconut Oil,Oil,ml
-Mustard Seeds,Spice,grams
-Chilli Powder,Spice,grams
+ingredient_id,name,category,default_unit
+1,Onion,Vegetable,grams
+2,Tomato,Vegetable,grams
+3,Chicken,Meat,grams
+4,Rice,Grain,grams
+5,Milk,Dairy,ml
+6,Egg,Eggs,pcs
+7,Salt,Spice,grams

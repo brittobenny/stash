@@ -1,5 +1,6 @@
 from django.db import models
 from django.contrib.auth.models import User
+from django.conf import settings
 
 class Ingredient(models.Model):
     CATEGORY_CHOICES = [
@@ -20,6 +21,13 @@ class Ingredient(models.Model):
     def __str__(self):
         return self.name
 
+class Ingredient(models.Model):
+    name = models.CharField(max_length=100, unique=True)
+    category = models.CharField(max_length=50)
+    default_unit = models.CharField(max_length=20)
+
+    def __str__(self):
+        return self.name
 
 
 
@@ -35,3 +43,18 @@ class InventoryItem(models.Model):
 
     def __str__(self):
         return f"{self.ingredient.name} - {self.user.username}"
+
+
+
+
+class PantryItem(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    ingredient = models.ForeignKey(Ingredient, on_delete=models.CASCADE)
+    quantity = models.FloatField()
+    expiry_date = models.DateField(null=True, blank=True)
+
+    class Meta:
+        unique_together = ('user', 'ingredient')
+
+    def __str__(self):
+        return f"{self.user} - {self.ingredient.name}"
