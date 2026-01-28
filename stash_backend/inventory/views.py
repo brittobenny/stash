@@ -13,9 +13,16 @@ from .ml.recommender import recommender
 @permission_classes([IsAuthenticated])
 def add_pantry_item(request):
 
-    ingredient_id = request.data.get("ingredient")
+    ingredient_id = request.data.get("ingredient_id")
     quantity = float(request.data.get("quantity"))
     expiry_date = request.data.get("expiry_date")
+
+    if not ingredient_id:
+        return Response(
+            {"error": "ingredient_id is required"},
+            status=400
+        )
+
 
     pantry_item, created = PantryItem.objects.get_or_create(
         user=request.user,
