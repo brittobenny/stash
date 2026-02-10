@@ -2,6 +2,7 @@ from django.urls import path
 from .views import add_pantry_item
 from .views import get_pantry_items
 from .views import recommend_meals
+from .views import cook_recipe
 from .views import (
     add_to_inventory,
     view_inventory,
@@ -17,4 +18,5 @@ urlpatterns = [
     path("inventory/update/<int:pk>/", update_inventory),
     path("inventory/delete/<int:pk>/", delete_inventory),
     path("recommend/", recommend_meals),
+    path("cook/", cook_recipe),
 ]
