@@ -19,6 +19,7 @@ class Ingredient(models.Model):
     name = models.CharField(max_length=100, unique=True)
     category = models.CharField(max_length=50, choices=CATEGORY_CHOICES)
     default_unit = models.CharField(max_length=20)  # grams, ml, pcs
+    image_url = models.URLField(blank=True, null=True)
 
     def __str__(self):
         return self.name

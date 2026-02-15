@@ -12,6 +12,9 @@ class PantryItemSerializer(serializers.ModelSerializer):
     unit = serializers.CharField(
         source="ingredient.default_unit", read_only=True
     )
+    image_url = serializers.CharField(
+        source="ingredient.image_url", read_only=True
+    )
 
     class Meta:
         model = PantryItem
@@ -22,6 +25,7 @@ class PantryItemSerializer(serializers.ModelSerializer):
             "category",
             "quantity",
             "unit",
+            "image_url",
             "expiry_date"
         ]
 

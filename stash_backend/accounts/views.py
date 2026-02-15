@@ -43,6 +43,15 @@ class LoginView(APIView):
             }, status=status.HTTP_400_BAD_REQUEST)
         
         user = authenticate(username=email, password=password)
+        if user is None:
+            # Allow login by email even if username isn't email
+            try:
+                from django.contrib.auth.models import User
+                user_obj = User.objects.filter(email__iexact=email).first()
+                if user_obj:
+                    user = authenticate(username=user_obj.username, password=password)
+            except Exception:
+                user = None
         
         if user is None:
             return Response({
@@ -53,9 +62,13 @@ class LoginView(APIView):
             profile = UserProfile.objects.get(user=user)
             role = profile.role
         except UserProfile.DoesNotExist:
-            return Response({
-                "error": "User profile not found"
-            }, status=status.HTTP_404_NOT_FOUND)
+            # Auto-create profile if missing (admin-created users)
+            role = "shopowner" if user.is_staff else "customer"
+            profile = UserProfile.objects.create(
+                user=user,
+                role=role,
+                mobile_number=""
+            )
         
         token, _ = Token.objects.get_or_create(user=user)
         

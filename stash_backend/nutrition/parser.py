@@ -42,10 +42,14 @@ def _to_number(qty_str: str) -> float:
 
 def _normalize_unit(unit: str) -> str:
     u = (unit or "").lower().strip()
+    u = u.replace("tsp", "teaspoon")
+    u = u.replace("tbsp", "tablespoon")
     u = u.replace("teaspoons", "teaspoon")
     u = u.replace("tablespoons", "tablespoon")
     u = u.replace("cups", "cup")
     u = u.replace("pieces", "piece")
+    u = u.replace("pcs", "piece")
+    u = u.replace("pc", "piece")
     u = u.replace("liters", "liter")
     u = u.replace("inches", "inch")
     return u
@@ -121,7 +125,7 @@ def _grams_for_piece(qty: float, clean_name: str):
 def parse_ingredient(text: str):
     raw = (text or "").strip().lower()
     if not raw:
-        return {"name": "", "grams": 0.0}
+        return {"name": "", "grams": 0.0, "quantity": None, "unit": None, "display": ""}
 
     # 1) quantity at start (supports fractions/unicode)
     qty_match = re.match(
@@ -143,31 +147,49 @@ def parse_ingredient(text: str):
 
     unit = None
     name_part = rest
+    raw_unit = None
     if unit_match:
-        unit = unit_match.group(1)
+        raw_unit = unit_match.group(1)
+        unit = raw_unit
         name_part = unit_match.group(2).strip()
 
     clean_name = _clean_name(name_part)
 
     # 3) no qty -> defaults
     if qty is None:
-        return {"name": clean_name, "grams": round(_guess_default_grams(clean_name), 2)}
+        grams = round(_guess_default_grams(clean_name), 2)
+        return {"name": clean_name, "grams": grams, "quantity": None, "unit": None, "display": f"{grams} g"}
 
     # 4) inch/cm conversion
     if unit:
         length_grams = _grams_for_length_unit(qty, unit, clean_name)
         if length_grams >= 0:
-            return {"name": clean_name, "grams": round(float(length_grams), 2)}
+            grams = round(float(length_grams), 2)
+            return {
+                "name": clean_name,
+                "grams": grams,
+                "quantity": qty,
+                "unit": _normalize_unit(unit),
+                "display": f"{qty} {raw_unit or unit}"
+            }
 
     # ✅ 5) qty exists but unit missing -> treat as pieces if possible
     if not unit:
         piece_grams = _grams_for_piece(qty, clean_name)
         if piece_grams is not None:
-            return {"name": clean_name, "grams": round(float(piece_grams), 2)}
+            grams = round(float(piece_grams), 2)
+            return {"name": clean_name, "grams": grams, "quantity": qty, "unit": "piece", "display": f"{qty} pcs"}
         # otherwise assume grams
-        return {"name": clean_name, "grams": round(float(qty), 2)}
+        grams = round(float(qty), 2)
+        return {"name": clean_name, "grams": grams, "quantity": qty, "unit": "gram", "display": f"{qty} g"}
 
     # 6) normal unit conversion
     u = _normalize_unit(unit)
     grams = qty * float(UNIT_TO_GRAMS.get(u, 1))
-    return {"name": clean_name, "grams": round(float(grams), 2)}
+    return {
+        "name": clean_name,
+        "grams": round(float(grams), 2),
+        "quantity": qty,
+        "unit": u,
+        "display": f"{qty} {raw_unit or unit}"
+    }

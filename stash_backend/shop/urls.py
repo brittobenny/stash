@@ -5,6 +5,7 @@ from .views import (
     UpdateProductView,
     DeleteProductView,
     PublicProductListView,
+    CategoryListCreateView,
 
     # cart + order functions (they are functions in views.py)
     get_cart,
@@ -14,10 +15,12 @@ from .views import (
     cancel_order,
     mark_delivered,
     confirm_add_to_pantry,
+    list_orders,
 )
 
 urlpatterns = [
     # products
+    path("categories/", CategoryListCreateView.as_view()),
     path("products/add/", AddProductView.as_view()),
     path("products/my/", MyProductsView.as_view()),
     path("products/update/<int:pk>/", UpdateProductView.as_view()),
@@ -31,6 +34,7 @@ urlpatterns = [
 
     # order
     path("checkout/", checkout),
+    path("orders/", list_orders),
     path("orders/<int:order_id>/cancel/", cancel_order),
     path("orders/<int:order_id>/delivered/", mark_delivered),
     path("orders/<int:order_id>/confirm-pantry/", confirm_add_to_pantry),

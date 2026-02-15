@@ -7,11 +7,11 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from .models import Product, Cart, CartItem, Order, OrderItem
-from .serializers import ProductSerializer, CartSerializer, OrderSerializer
+from .models import Product, Cart, CartItem, Order, OrderItem, Category
+from .serializers import ProductSerializer, CartSerializer, OrderSerializer, CategorySerializer
 from .permissions import IsShopOwner
 
-from inventory.models import PantryItem
+from inventory.models import PantryItem, Ingredient
 
 
 # ----------------------------
@@ -22,6 +22,21 @@ def _get_cart(user):
     return cart
 
 
+def _normalize_unit_key(unit: str) -> str:
+    u = (unit or "").lower().strip()
+    if u in {"g", "gram", "grams"}:
+        return "grams"
+    if u in {"kg", "kilogram", "kilograms"}:
+        return "kg"
+    if u in {"ml", "milliliter", "milliliters"}:
+        return "ml"
+    if u in {"l", "liter", "liters"}:
+        return "l"
+    if u in {"pcs", "pc", "piece", "pieces"}:
+        return "pcs"
+    return u
+
+
 def convert_to_default_unit(amount: float, from_unit: str, ingredient_default_unit: str):
     """
     Converts shop unit to inventory base unit.
@@ -30,13 +45,13 @@ def convert_to_default_unit(amount: float, from_unit: str, ingredient_default_un
     Returns converted amount (float) if convertible and matches ingredient_default_unit,
     else returns None.
     """
-    u = (from_unit or "").lower().strip()
-    target = (ingredient_default_unit or "").lower().strip()
+    u = _normalize_unit_key(from_unit)
+    target = _normalize_unit_key(ingredient_default_unit)
 
     # normalize shop -> inventory units
     if u == "kg":
         amount, u = amount * 1000.0, "grams"
-    elif u == "g":
+    elif u == "grams":
         amount, u = amount, "grams"
     elif u == "l":
         amount, u = amount * 1000.0, "ml"
@@ -89,6 +104,12 @@ class PublicProductListView(generics.ListAPIView):
     serializer_class = ProductSerializer
     permission_classes = [permissions.AllowAny]
     queryset = Product.objects.filter(is_active=True)
+
+
+class CategoryListCreateView(generics.ListCreateAPIView):
+    serializer_class = CategorySerializer
+    permission_classes = [IsShopOwner]
+    queryset = Category.objects.all()
 
 
 # ----------------------------
@@ -239,6 +260,12 @@ def mark_delivered(request, order_id):
     order.save(update_fields=["status", "delivered_at", "needs_pantry_confirm"])
     return Response(OrderSerializer(order).data)
 
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def list_orders(request):
+    orders = Order.objects.filter(user=request.user).order_by("-created_at")
+    return Response(OrderSerializer(orders, many=True).data)
+
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
@@ -256,8 +283,13 @@ def confirm_add_to_pantry(request, order_id):
         if not order:
             return Response({"error": "Order not found"}, status=404)
 
-        if order.status != "DELIVERED" or not order.needs_pantry_confirm:
+        if order.status not in {"DELIVERED", "PLACED"}:
             return Response({"error": "Order not awaiting pantry confirmation"}, status=400)
+
+        if order.status == "PLACED":
+            order.status = "DELIVERED"
+            order.delivered_at = timezone.now()
+            order.needs_pantry_confirm = True
 
         if order.pantry_applied:
             return Response({"error": "Already applied to pantry"}, status=400)
@@ -274,15 +306,36 @@ def confirm_add_to_pantry(request, order_id):
             for oi in order_items:
                 p = oi.product
                 ing = getattr(p, "ingredient", None)
-
+                source_unit = (oi.pack_unit or oi.unit or p.unit)
+                if source_unit == "pack":
+                    source_unit = (oi.unit or p.unit)
                 if not ing:
-                    skipped.append({"product": p.name, "reason": "product.ingredient is null"})
-                    continue
+                    existing = Ingredient.objects.filter(name__iexact=p.name).first()
+                    if existing:
+                        ing = existing
+                    else:
+                        inferred_unit = _normalize_unit_key(source_unit)
+                        if inferred_unit in {"kg", "grams"}:
+                            default_unit = "grams"
+                        elif inferred_unit in {"l", "ml"}:
+                            default_unit = "ml"
+                        elif inferred_unit == "pcs":
+                            default_unit = "pcs"
+                        else:
+                            skipped.append({"product": p.name, "reason": "ingredient missing and unit unknown"})
+                            continue
+                        ing = Ingredient.objects.create(
+                            name=p.name,
+                            category="Other",
+                            default_unit=default_unit
+                        )
+                    p.ingredient = ing
+                    p.save(update_fields=["ingredient"])
 
                 total_amount = float(oi.quantity) * float(oi.pack_size or 1)
                 converted = convert_to_default_unit(
                     total_amount,
-                    (oi.pack_unit or oi.unit),
+                    source_unit,
                     ing.default_unit
                 )
 
@@ -290,7 +343,7 @@ def confirm_add_to_pantry(request, order_id):
                     skipped.append({
                         "product": p.name,
                         "ingredient": ing.name,
-                        "reason": f"unit mismatch (pack_unit={oi.pack_unit}, ingredient.default_unit={ing.default_unit})"
+                        "reason": f"unit mismatch (pack_unit={oi.pack_unit}, unit={oi.unit}, ingredient.default_unit={ing.default_unit})"
                     })
                     continue
 

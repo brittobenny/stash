@@ -26,7 +26,10 @@ class Command(BaseCommand):
                 Ingredient.objects.get_or_create(
                     name=row["name"],
                     category=row["category"],
-                    default_unit=row["default_unit"]
+                    default_unit=row["default_unit"],
+                    defaults={
+                        "image_url": row.get("image_url")
+                    }
                 )
 
         self.stdout.write(self.style.SUCCESS("Ingredients loaded successfully"))

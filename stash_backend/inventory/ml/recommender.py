@@ -73,6 +73,16 @@ class MealRecommender:
         self.loaded = True
         return True
 
+    def _clean_image_url(self, image_url):
+        if not image_url:
+            return ""
+        img = str(image_url).strip()
+        if not img or img.lower() in {"nan", "none", "null"}:
+            return ""
+        if not re.match(r"^https?://", img):
+            return ""
+        return img
+
     # ----------------------------------
     def recommend(self, pantry_items, top_k=5):
 
@@ -126,6 +136,10 @@ class MealRecommender:
                 parsed_ingredients.append(parse_ingredient(ing))
             nutrition = calculate_nutrition(parsed_ingredients)
 
+            image_url = row.get("image_url")
+            if image_url and image_url != image_url:
+                image_url = ""
+            image_url = self._clean_image_url(image_url)
             results.append({
                 "id": int(row["id"]),
                 "name": row["name"],
@@ -133,7 +147,7 @@ class MealRecommender:
                 "minutes": int(minutes),
                 "difficulty": difficulty,
                 "cuisine": row.get("cuisine", "General"),
-                "image_url": row.get("image_url"),
+                "image_url": image_url,
                 "steps": row["instructions"].split("."),
                 "used_ingredients": list(intersection),
                 "missing_ingredients": list(recipe_ing - pantry_set),
@@ -144,6 +158,53 @@ class MealRecommender:
         results.sort(key=lambda x: x["match_percent"], reverse=True)
 
         return results[:top_k]
+
+    def get_by_id(self, recipe_id: int):
+        if not self.loaded:
+            self.load_data()
+
+        if self.recipes is None:
+            return None
+
+        row = self.recipes[self.recipes["id"] == int(recipe_id)]
+        if row.empty:
+            return None
+
+        row = row.iloc[0]
+
+        raw_ingredients = str(row.get("TranslatedIngredients", "")).split(",")
+        parsed_ingredients = []
+        for ing in raw_ingredients:
+            parsed_ingredients.append(parse_ingredient(ing))
+
+        nutrition = calculate_nutrition(parsed_ingredients)
+
+        minutes = int(row.get("minutes", 0))
+        difficulty = (
+            "Easy" if minutes <= 30 else
+            "Intermediate" if minutes <= 60 else
+            "Advanced"
+        )
+
+        recipe_ing = row["ingredients_set"] if "ingredients_set" in row.index else set()
+
+        image_url = row.get("image_url")
+        if image_url and image_url != image_url:
+            image_url = ""
+        image_url = self._clean_image_url(image_url)
+
+        return {
+            "id": int(row["id"]),
+            "name": row.get("name"),
+            "minutes": minutes,
+            "difficulty": difficulty,
+            "cuisine": row.get("cuisine", "General"),
+            "image_url": image_url,
+            "steps": str(row.get("instructions", "")).split("."),
+            "parsed_ingredients": parsed_ingredients,
+            "nutrition": nutrition,
+            "ingredients_set": list(recipe_ing),
+        }
 
 
 # Global Instance
