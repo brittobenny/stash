@@ -44,7 +44,12 @@ const Navbar = () => {
                         </>
                     )}
                     {role === 'shopowner' && (
-                        <li><Link to="/shop-owner" style={styles.link}>Dashboard</Link></li>
+                        <>
+                            <li><Link to="/shop-owner/dashboard" style={{ ...styles.link, ...(isActive('/shop-owner/dashboard') ? styles.linkActive : {}) }}>Dashboard</Link></li>
+                            <li><Link to="/shop-owner/products" style={{ ...styles.link, ...(isActive('/shop-owner/products') ? styles.linkActive : {}) }}>Products</Link></li>
+                            <li><Link to="/shop-owner/orders" style={{ ...styles.link, ...(isActive('/shop-owner/orders') ? styles.linkActive : {}) }}>Orders</Link></li>
+                            <li><Link to="/shop-owner/feedback" style={{ ...styles.link, ...(isActive('/shop-owner/feedback') ? styles.linkActive : {}) }}>Feedback</Link></li>
+                        </>
                     )}
                     {role === 'admin' && (
                         <li><Link to="/admin" style={styles.link}>Admin</Link></li>

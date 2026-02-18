@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import { ShoppingCart, Plus, Search } from 'lucide-react';
-import { shopService } from '../services/api';
+import { shopService, accountService } from '../services/api';
 import '../styles/global.css';
 
 const Shop = () => {
@@ -10,16 +10,29 @@ const Shop = () => {
     const [cart, setCart] = useState([]);
     const [loading, setLoading] = useState(false);
     const [search, setSearch] = useState('');
+    const [profileComplete, setProfileComplete] = useState(true);
+    const [userLocation, setUserLocation] = useState('');
 
     useEffect(() => {
         fetchProducts();
         fetchCart();
+        fetchProfile();
     }, []);
 
     useEffect(() => {
         const q = new URLSearchParams(location.search).get('q');
         if (q) setSearch(q);
     }, [location.search]);
+
+    const fetchProfile = async () => {
+        try {
+            const res = await accountService.getProfile();
+            setProfileComplete(Boolean(res.data?.profile_completed));
+            setUserLocation(String(res.data?.location || '').trim());
+        } catch (err) {
+            setProfileComplete(true);
+        }
+    };
 
     const fetchProducts = async () => {
         setLoading(true);
@@ -43,6 +56,10 @@ const Shop = () => {
     };
 
     const addToCart = async (product) => {
+        if (!profileComplete) {
+            alert('Please complete your profile (address & location) to add items to cart.');
+            return;
+        }
         try {
             await shopService.addToCart(product.id, 1);
             // Simple optimistic UI update or refetch
@@ -67,6 +84,17 @@ const Shop = () => {
         );
     });
 
+    const sortedProducts = [...filteredProducts].sort((a, b) => {
+        if (!userLocation) return 0;
+        const aLoc = String(a.owner_location || '').toLowerCase();
+        const bLoc = String(b.owner_location || '').toLowerCase();
+        const target = userLocation.toLowerCase();
+        const aMatch = aLoc && aLoc.includes(target);
+        const bMatch = bLoc && bLoc.includes(target);
+        if (aMatch === bMatch) return 0;
+        return aMatch ? -1 : 1;
+    });
+
     return (
         <div style={styles.page}>
             <header style={styles.header}>
@@ -87,7 +115,7 @@ const Shop = () => {
                 <div style={styles.cartSummary}>
                     <ShoppingCart size={20} /> <span style={{ fontWeight: 'bold' }}>{getCartCount()}</span> items
                     {getCartCount() > 0 && (
-                        <button style={styles.checkoutBtn} onClick={() => window.location.href = '/customer/cart'}>
+                        <button style={{ ...styles.checkoutBtn, opacity: profileComplete ? 1 : 0.5 }} onClick={() => profileComplete && (window.location.href = '/customer/cart')}>
                             View Cart
                         </button>
                     )}
@@ -96,6 +124,9 @@ const Shop = () => {
                     </button>
                 </div>
             </header>
+            {!profileComplete && (
+                <div style={styles.alert}>Complete your profile (address & location) to start shopping.</div>
+            )}
 
             {loading ? (
                 <div style={{ padding: '2rem', textAlign: 'center' }}>Loading products...</div>
@@ -104,7 +135,7 @@ const Shop = () => {
                     {filteredProducts.length === 0 ? (
                         <p style={{ gridColumn: '1/-1', textAlign: 'center' }}>No products available at the moment.</p>
                     ) : (
-                        filteredProducts.map((product, index) => (
+                        sortedProducts.map((product, index) => (
                             <div
                                 key={product.id}
                                 style={{ ...styles.card, animationDelay: `${index * 0.05}s` }}
@@ -137,15 +168,18 @@ const Shop = () => {
                                         <span style={styles.price}>${Number(product.price).toFixed(2)}</span>
                                     </div>
                                     <p style={styles.category}>{product.category_name || product.category || 'General'}</p>
+                                    {product.owner_location && (
+                                        <div style={styles.locationTag}>Shop: {product.owner_location}</div>
+                                    )}
                                     <div style={styles.stockInfo}>
                                         <span style={{ color: product.stock_quantity > 0 ? 'green' : 'red' }}>
                                             {product.stock_quantity > 0 ? `${product.stock_quantity} in stock` : 'Out of Stock'}
                                         </span>
                                     </div>
                                     <button
-                                        style={{ ...styles.actionBtn, opacity: product.stock_quantity > 0 ? 1 : 0.5 }}
+                                        style={{ ...styles.actionBtn, opacity: product.stock_quantity > 0 && profileComplete ? 1 : 0.5 }}
                                         onClick={() => addToCart(product)}
-                                        disabled={product.stock_quantity <= 0}
+                                        disabled={product.stock_quantity <= 0 || !profileComplete}
                                     >
                                         <Plus size={16} /> Add to Cart
                                     </button>
@@ -179,6 +213,8 @@ const styles = {
     category: { fontSize: '0.9rem', color: 'var(--color-text-light)', marginBottom: '0.5rem' },
     stockInfo: { fontSize: '0.85rem', marginBottom: '1rem' },
     actionBtn: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', width: '100%', padding: '12px', background: 'var(--color-primary)', color: '#ffffff', borderRadius: '8px', fontWeight: '500', cursor: 'pointer', border: 'none' },
+    alert: { background: 'rgba(225,29,46,0.1)', color: 'var(--color-primary)', border: '1px solid rgba(225,29,46,0.2)', padding: '12px 16px', borderRadius: '12px', marginBottom: '1.5rem', fontWeight: '600' },
+    locationTag: { fontSize: '0.85rem', color: 'var(--color-text-light)', marginBottom: '0.4rem' },
 };
 
 export default Shop;

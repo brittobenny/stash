@@ -1,318 +1,137 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Package, DollarSign, Plus, Trash2, Edit, Layers, UploadCloud } from 'lucide-react';
-import { shopOwnerService, pantryService } from '../services/api';
+import {
+    DollarSign,
+    Package,
+    Layers,
+    TrendingUp,
+    Calendar,
+} from 'lucide-react';
+import { shopOwnerService } from '../services/api';
 import '../styles/global.css';
-
-const defaultForm = {
-    name: '',
-    category: '',
-    price: '',
-    stock_quantity: '',
-    unit: 'pcs',
-    ingredient_id: '',
-    pack_size: '',
-    pack_unit: 'pcs',
-    is_active: true,
-};
 
 const ShopOwnerDashboard = () => {
     const [products, setProducts] = useState([]);
-    const [categories, setCategories] = useState([]);
-    const [ingredients, setIngredients] = useState([]);
-    const [form, setForm] = useState(defaultForm);
-    const [editingId, setEditingId] = useState(null);
-    const [newCategoryName, setNewCategoryName] = useState('');
     const [loading, setLoading] = useState(false);
 
     useEffect(() => {
-        loadAll();
+        loadProducts();
     }, []);
 
-    const loadAll = async () => {
+    const loadProducts = async () => {
         setLoading(true);
         try {
-            const [prodRes, catRes, ingRes] = await Promise.all([
-                shopOwnerService.getMyProducts(),
-                shopOwnerService.listCategories(),
-                pantryService.listIngredients(),
-            ]);
+            const prodRes = await shopOwnerService.getMyProducts();
             setProducts(prodRes.data || []);
-            setCategories(catRes.data || []);
-            setIngredients(ingRes.data || []);
         } catch (err) {
-            console.error('Shop owner data fetch failed', err);
+            console.error('Shop owner products fetch failed', err);
         } finally {
             setLoading(false);
         }
-    };
-
-    const handleCreateCategory = async () => {
-        if (!newCategoryName.trim()) return;
-        const res = await shopOwnerService.createCategory(newCategoryName.trim());
-        setCategories((prev) => [...prev, res.data]);
-        setForm((prev) => ({ ...prev, category: res.data.id }));
-        setNewCategoryName('');
-    };
-
-    const handleSubmit = async (e) => {
-        e.preventDefault();
-        try {
-            if (editingId) {
-                await shopOwnerService.updateProduct(editingId, form);
-            } else {
-                await shopOwnerService.addProduct(form);
-            }
-            setForm(defaultForm);
-            setEditingId(null);
-            await loadAll();
-        } catch (err) {
-            alert('Failed to save product.');
-        }
-    };
-
-    const handleEdit = (product) => {
-        setEditingId(product.id);
-        setForm({
-            name: product.name || '',
-            category: product.category || '',
-            price: product.price || '',
-            stock_quantity: product.stock_quantity ?? '',
-            unit: product.unit || 'pcs',
-            ingredient_id: product.ingredient_id || '',
-            pack_size: product.pack_size || '',
-            pack_unit: product.pack_unit || 'pcs',
-            is_active: product.is_active ?? true,
-        });
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-    };
-
-    const handleDelete = async (id) => {
-        if (!confirm('Delete this product?')) return;
-        await shopOwnerService.deleteProduct(id);
-        loadAll();
     };
 
     const stats = useMemo(() => ({
         totalProducts: products.length,
         totalStock: products.reduce((sum, p) => sum + (p.stock_quantity || 0), 0),
         activeProducts: products.filter((p) => p.is_active).length,
+        inventoryValue: products.reduce((sum, p) => sum + Number(p.price || 0) * Number(p.stock_quantity || 0), 0),
     }), [products]);
+
+    const reportData = [
+        { label: 'Mon', value: 38 },
+        { label: 'Tue', value: 52 },
+        { label: 'Wed', value: 28 },
+        { label: 'Thu', value: 70 },
+        { label: 'Fri', value: 64 },
+        { label: 'Sat', value: 82 },
+        { label: 'Sun', value: 45 },
+    ];
 
     return (
         <div style={styles.page}>
-            <header style={styles.header}>
-                <div>
-                    <h1 style={styles.title}>Shop Owner Console</h1>
-                    <p style={styles.subtitle}>Manage products, stock, and pantry mapping.</p>
-                </div>
-                <button style={styles.refreshBtn} onClick={loadAll} disabled={loading}>
-                    Refresh
-                </button>
-            </header>
-
-            <div style={styles.statsGrid}>
-                <div style={styles.statCard}>
-                    <Package size={20} />
-                    <div>
-                        <p style={styles.statLabel}>Products</p>
-                        <p style={styles.statValue}>{stats.totalProducts}</p>
-                    </div>
-                </div>
-                <div style={styles.statCard}>
-                    <Layers size={20} />
-                    <div>
-                        <p style={styles.statLabel}>Active Listings</p>
-                        <p style={styles.statValue}>{stats.activeProducts}</p>
-                    </div>
-                </div>
-                <div style={styles.statCard}>
-                    <DollarSign size={20} />
-                    <div>
-                        <p style={styles.statLabel}>Stock Units</p>
-                        <p style={styles.statValue}>{stats.totalStock}</p>
-                    </div>
-                </div>
-            </div>
-
-            <section style={styles.formCard}>
-                <div style={styles.formHeader}>
-                    <h2>{editingId ? 'Edit Product' : 'Add New Product'}</h2>
-                    <span style={styles.formBadge}>
-                        <UploadCloud size={14} /> Pantry mapping enabled
-                    </span>
-                </div>
-                <form onSubmit={handleSubmit} style={styles.form}>
-                    <div style={styles.formGrid}>
-                        <div style={styles.formGroup}>
-                            <label>Product Name</label>
-                            <input
-                                style={styles.input}
-                                value={form.name}
-                                onChange={(e) => setForm({ ...form, name: e.target.value })}
-                                required
-                            />
-                        </div>
-                        <div style={styles.formGroup}>
-                            <label>Category</label>
-                            <select
-                                style={styles.input}
-                                value={form.category}
-                                onChange={(e) => setForm({ ...form, category: e.target.value })}
-                                required
-                            >
-                                <option value="">Select category</option>
-                                {categories.map((c) => (
-                                    <option key={c.id} value={c.id}>{c.name}</option>
-                                ))}
-                            </select>
-                        </div>
-                        <div style={styles.formGroup}>
-                            <label>Price</label>
-                            <input
-                                type="number"
-                                step="0.01"
-                                style={styles.input}
-                                value={form.price}
-                                onChange={(e) => setForm({ ...form, price: e.target.value })}
-                                required
-                            />
-                        </div>
-                        <div style={styles.formGroup}>
-                            <label>Stock Quantity</label>
-                            <input
-                                type="number"
-                                style={styles.input}
-                                value={form.stock_quantity}
-                                onChange={(e) => setForm({ ...form, stock_quantity: e.target.value })}
-                                required
-                            />
-                        </div>
-                        <div style={styles.formGroup}>
-                            <label>Unit</label>
-                            <select
-                                style={styles.input}
-                                value={form.unit}
-                                onChange={(e) => setForm({ ...form, unit: e.target.value })}
-                            >
-                                <option value="g">g</option>
-                                <option value="kg">kg</option>
-                                <option value="ml">ml</option>
-                                <option value="l">l</option>
-                                <option value="pcs">pcs</option>
-                            </select>
-                        </div>
-                        <div style={styles.formGroup}>
-                            <label>Ingredient Mapping</label>
-                            <select
-                                style={styles.input}
-                                value={form.ingredient_id}
-                                onChange={(e) => setForm({ ...form, ingredient_id: e.target.value })}
-                            >
-                                <option value="">Select ingredient</option>
-                                {ingredients.map((ing) => (
-                                    <option key={ing.id} value={ing.id}>{ing.name} ({ing.default_unit})</option>
-                                ))}
-                            </select>
-                        </div>
-                        <div style={styles.formGroup}>
-                            <label>Pack Size</label>
-                            <input
-                                type="number"
-                                step="0.1"
-                                style={styles.input}
-                                value={form.pack_size}
-                                onChange={(e) => setForm({ ...form, pack_size: e.target.value })}
-                            />
-                        </div>
-                        <div style={styles.formGroup}>
-                            <label>Pack Unit</label>
-                            <select
-                                style={styles.input}
-                                value={form.pack_unit}
-                                onChange={(e) => setForm({ ...form, pack_unit: e.target.value })}
-                            >
-                                <option value="g">g</option>
-                                <option value="kg">kg</option>
-                                <option value="ml">ml</option>
-                                <option value="l">l</option>
-                                <option value="pcs">pcs</option>
-                            </select>
-                        </div>
-                        <div style={styles.formGroup}>
-                            <label>Active Listing</label>
-                            <label style={styles.toggle}>
-                                <input
-                                    type="checkbox"
-                                    checked={!!form.is_active}
-                                    onChange={(e) => setForm({ ...form, is_active: e.target.checked })}
-                                />
-                                <span>{form.is_active ? 'Visible in shop' : 'Hidden'}</span>
-                            </label>
-                        </div>
-                    </div>
-
-                    <div style={styles.categoryInline}>
-                        <input
-                            style={styles.input}
-                            placeholder="Create new category"
-                            value={newCategoryName}
-                            onChange={(e) => setNewCategoryName(e.target.value)}
-                        />
-                        <button type="button" style={styles.secondaryBtn} onClick={handleCreateCategory}>
-                            <Plus size={16} /> Add Category
+            <section style={styles.hero}>
+                <div style={styles.heroContent}>
+                    <span style={styles.kicker}>Shop Owner Dashboard</span>
+                    <h1 style={styles.title}>Command Center</h1>
+                    <p style={styles.subtitle}>
+                        Track sales performance, manage inventory, and keep your listings fresh across Stash.
+                    </p>
+                    <div style={styles.heroActions}>
+                        <button style={styles.primaryBtn} onClick={loadProducts} disabled={loading}>
+                            {loading ? 'Refreshing...' : 'Refresh Data'}
                         </button>
                     </div>
-
-                    <div style={styles.formActions}>
-                        <button type="submit" style={styles.primaryBtn}>
-                            {editingId ? 'Update Product' : 'Save Product'}
-                        </button>
-                        {editingId && (
-                            <button
-                                type="button"
-                                style={styles.secondaryBtn}
-                                onClick={() => { setForm(defaultForm); setEditingId(null); }}
-                            >
-                                Cancel
-                            </button>
-                        )}
+                </div>
+                <div style={styles.heroPanel}>
+                    <div style={styles.panelCard}>
+                        <div style={styles.panelIcon}><DollarSign size={18} /></div>
+                        <div>
+                            <p style={styles.panelLabel}>Inventory value</p>
+                            <p style={styles.panelValue}>${stats.inventoryValue.toFixed(2)}</p>
+                        </div>
                     </div>
-                </form>
+                    <div style={styles.panelCard}>
+                        <div style={styles.panelIcon}><Package size={18} /></div>
+                        <div>
+                            <p style={styles.panelLabel}>Active listings</p>
+                            <p style={styles.panelValue}>{stats.activeProducts}</p>
+                        </div>
+                    </div>
+                    <div style={styles.panelCard}>
+                        <div style={styles.panelIcon}><Layers size={18} /></div>
+                        <div>
+                            <p style={styles.panelLabel}>Stock units</p>
+                            <p style={styles.panelValue}>{stats.totalStock}</p>
+                        </div>
+                    </div>
+                    <div style={styles.panelCard}>
+                        <div style={styles.panelIcon}><TrendingUp size={18} /></div>
+                        <div>
+                            <p style={styles.panelLabel}>Weekly growth</p>
+                            <p style={styles.panelValue}>+14%</p>
+                        </div>
+                    </div>
+                </div>
             </section>
 
-            <section>
-                <h2 style={styles.sectionTitle}>Inventory List</h2>
-                <div style={styles.tableWrap}>
-                    <table style={styles.table}>
-                        <thead>
-                            <tr>
-                                <th style={styles.th}>Product</th>
-                                <th style={styles.th}>Category</th>
-                                <th style={styles.th}>Stock</th>
-                                <th style={styles.th}>Price</th>
-                                <th style={styles.th}>Pack</th>
-                                <th style={styles.th}>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {products.map((p) => (
-                                <tr key={p.id}>
-                                    <td style={styles.td}>
-                                        <strong>{p.name}</strong>
-                                        <div style={styles.tdSub}>{p.ingredient_name || 'No mapping'}</div>
-                                    </td>
-                                    <td style={styles.td}>{p.category_name || '--'}</td>
-                                    <td style={styles.td}>{p.stock_quantity}</td>
-                                    <td style={styles.td}>${Number(p.price).toFixed(2)}</td>
-                                    <td style={styles.td}>{p.pack_size} {p.pack_unit}</td>
-                                    <td style={styles.td}>
-                                        <button style={styles.iconBtn} onClick={() => handleEdit(p)}><Edit size={16} /></button>
-                                        <button style={{ ...styles.iconBtn, color: '#ef4444' }} onClick={() => handleDelete(p.id)}><Trash2 size={16} /></button>
-                                    </td>
-                                </tr>
+            <section style={styles.reportSection}>
+                <div style={styles.sectionHeader}>
+                    <div>
+                        <h2 style={styles.sectionTitle}>Sales reports</h2>
+                        <p style={styles.sectionSubtitle}>Snapshot of weekly demand and fulfillment.</p>
+                    </div>
+                    <div style={styles.reportBadge}>
+                        <Calendar size={14} /> Last 7 days
+                    </div>
+                </div>
+                <div style={styles.reportGrid}>
+                    <div style={styles.reportCard}>
+                        <div style={styles.reportMetric}>
+                            <p>Total orders</p>
+                            <strong>128</strong>
+                        </div>
+                        <div style={styles.reportMetric}>
+                            <p>Avg. order value</p>
+                            <strong>$24.90</strong>
+                        </div>
+                        <div style={styles.reportMetric}>
+                            <p>On-time delivery</p>
+                            <strong>96%</strong>
+                        </div>
+                    </div>
+                    <div style={styles.chartCard}>
+                        <div style={styles.chartHeader}>
+                            <h3>Demand trend</h3>
+                            <span style={styles.chartNote}>Orders per day</span>
+                        </div>
+                        <div style={styles.chartBars}>
+                            {reportData.map((item) => (
+                                <div key={item.label} style={styles.chartBarWrap}>
+                                    <div style={{ ...styles.chartBar, height: `${item.value}%` }}></div>
+                                    <span>{item.label}</span>
+                                </div>
                             ))}
-                        </tbody>
-                    </table>
+                        </div>
+                    </div>
                 </div>
             </section>
         </div>
@@ -320,37 +139,80 @@ const ShopOwnerDashboard = () => {
 };
 
 const styles = {
-    page: { maxWidth: '1200px', margin: '0 auto', padding: '2rem' },
-    header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem', flexWrap: 'wrap', gap: '1rem' },
-    title: { fontSize: '2.2rem', color: 'var(--color-text)' },
-    subtitle: { color: 'var(--color-text-light)' },
-    refreshBtn: { background: 'var(--color-surface)', border: '1px solid var(--color-border)', padding: '8px 14px', borderRadius: '999px', cursor: 'pointer' },
+    page: {
+        background: 'linear-gradient(180deg, #f9f5f0 0%, #ffffff 40%, #fdf9f6 100%)',
+        padding: '2.5rem 2.5rem 4rem',
+        minHeight: '100vh',
+    },
+    hero: {
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+        gap: '2rem',
+        padding: '2.5rem',
+        borderRadius: '28px',
+        background: '#1f1b16',
+        color: '#fff',
+        marginBottom: '2.5rem',
+        boxShadow: '0 30px 60px rgba(30, 27, 22, 0.28)',
+    },
+    heroContent: {
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '1rem',
+        justifyContent: 'center',
+    },
+    kicker: {
+        textTransform: 'uppercase',
+        letterSpacing: '0.2em',
+        fontSize: '0.75rem',
+        color: 'rgba(255,255,255,0.6)',
+    },
+    title: { fontSize: '2.8rem', fontFamily: 'var(--font-heading)' },
+    subtitle: { color: 'rgba(255,255,255,0.75)', maxWidth: '460px' },
+    heroActions: { display: 'flex', gap: '0.8rem', flexWrap: 'wrap', marginTop: '1rem' },
+    heroPanel: {
+        display: 'grid',
+        gap: '1rem',
+        alignContent: 'center',
+    },
+    panelCard: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: '1rem',
+        padding: '1rem 1.2rem',
+        borderRadius: '16px',
+        background: 'rgba(255,255,255,0.08)',
+        border: '1px solid rgba(255,255,255,0.15)',
+    },
+    panelIcon: {
+        width: '40px',
+        height: '40px',
+        borderRadius: '12px',
+        background: 'rgba(255,255,255,0.18)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    panelLabel: { fontSize: '0.85rem', color: 'rgba(255,255,255,0.7)' },
+    panelValue: { fontSize: '1.4rem', fontWeight: 700 },
 
-    statsGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem', marginBottom: '2rem' },
-    statCard: { background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '16px', padding: '1rem', display: 'flex', gap: '0.8rem', alignItems: 'center' },
-    statLabel: { color: 'var(--color-text-light)', fontSize: '0.85rem' },
-    statValue: { fontSize: '1.4rem', fontWeight: '700' },
+    primaryBtn: { background: 'var(--color-primary)', color: '#fff', border: 'none', padding: '12px 18px', borderRadius: '999px', fontWeight: '600', cursor: 'pointer' },
 
-    formCard: { background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '20px', padding: '2rem', marginBottom: '2rem', boxShadow: 'var(--shadow-sm)' },
-    formHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '1rem' },
-    formBadge: { display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'rgba(225,29,46,0.12)', border: '1px solid rgba(225,29,46,0.2)', padding: '6px 10px', borderRadius: '999px', color: 'var(--color-accent)', fontSize: '0.85rem' },
-    form: { display: 'flex', flexDirection: 'column', gap: '1.5rem' },
-    formGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem' },
-    formGroup: { display: 'flex', flexDirection: 'column', gap: '0.4rem' },
-    input: { padding: '10px', borderRadius: '10px', border: '1px solid var(--color-border)', background: 'var(--color-surface-2)' },
-    toggle: { display: 'inline-flex', alignItems: 'center', gap: '0.5rem', background: 'var(--color-surface-2)', padding: '10px', borderRadius: '10px', border: '1px solid var(--color-border)', color: 'var(--color-text-light)' },
-    formActions: { display: 'flex', gap: '1rem', flexWrap: 'wrap' },
-    primaryBtn: { background: 'var(--color-primary)', color: '#fff', border: 'none', padding: '10px 16px', borderRadius: '10px', fontWeight: '700', cursor: 'pointer' },
-    secondaryBtn: { background: 'transparent', border: '1px solid var(--color-border)', padding: '10px 16px', borderRadius: '10px', cursor: 'pointer' },
-    categoryInline: { display: 'flex', gap: '0.8rem', alignItems: 'center', flexWrap: 'wrap' },
+    reportSection: { marginBottom: '2.5rem' },
+    reportBadge: { display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '8px 14px', borderRadius: '999px', background: 'rgba(225,29,46,0.12)', color: 'var(--color-accent)', border: '1px solid rgba(225,29,46,0.2)' },
+    reportGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '1.5rem' },
+    reportCard: { background: '#fff', padding: '1.5rem', borderRadius: '20px', border: '1px solid var(--color-border)', boxShadow: 'var(--shadow-sm)', display: 'grid', gap: '1rem' },
+    reportMetric: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '1rem', color: 'var(--color-text-light)' },
+    chartCard: { background: '#fff', padding: '1.5rem', borderRadius: '20px', border: '1px solid var(--color-border)', boxShadow: 'var(--shadow-sm)' },
+    chartHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '1.5rem' },
+    chartNote: { color: 'var(--color-text-light)', fontSize: '0.85rem' },
+    chartBars: { display: 'flex', gap: '0.75rem', alignItems: 'flex-end', height: '160px' },
+    chartBarWrap: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.4rem', flex: 1, fontSize: '0.8rem', color: 'var(--color-text-light)' },
+    chartBar: { width: '100%', borderRadius: '10px 10px 6px 6px', background: 'linear-gradient(180deg, var(--color-primary), var(--color-accent))' },
 
-    sectionTitle: { fontSize: '1.4rem', marginBottom: '1rem' },
-    tableWrap: { background: 'var(--color-surface)', borderRadius: '16px', border: '1px solid var(--color-border)', overflowX: 'auto' },
-    table: { width: '100%', borderCollapse: 'collapse' },
-    th: { textAlign: 'left', padding: '1rem', color: 'var(--color-text-light)', borderBottom: '1px solid var(--color-border)', fontSize: '0.85rem', textTransform: 'uppercase' },
-    td: { padding: '1rem', borderBottom: '1px solid var(--color-border)' },
-    tdSub: { color: 'var(--color-text-light)', fontSize: '0.85rem' },
-    iconBtn: { background: 'transparent', border: 'none', cursor: 'pointer', marginRight: '0.4rem' },
+    sectionHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' },
+    sectionTitle: { fontSize: '1.7rem', color: 'var(--color-text)' },
+    sectionSubtitle: { color: 'var(--color-text-light)' },
 };
 
 export default ShopOwnerDashboard;

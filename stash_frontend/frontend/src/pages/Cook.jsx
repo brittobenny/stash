@@ -61,11 +61,11 @@ const Cook = () => {
         setSelectedIngredients([]);
     };
 
-    const getRecipeImage = (url, name) => {
-        const fallback = `https://source.unsplash.com/600x400/?food,${encodeURIComponent(name || 'recipe')}`;
-        if (!url || !/^https?:\/\//i.test(url)) return fallback;
+    const getRecipeImage = (url) => {
+        const localFallback = '/api/category-image/vegetable/';
+        if (!url || !/^https?:\/\//i.test(url)) return localFallback;
         const encoded = encodeURIComponent(url.trim());
-        return `/api/image-proxy/?url=${encoded}&fallback=${encodeURIComponent(fallback)}`;
+        return `/api/image-proxy/?url=${encoded}`;
     };
 
     return (
@@ -133,7 +133,7 @@ const Cook = () => {
             ) : (
                 <div style={styles.recipeGrid}>
                     {recommendations.map((recipe, index) => {
-                        const imgSrc = getRecipeImage(recipe.image_url, recipe.name);
+                        const imgSrc = getRecipeImage(recipe.image_url);
                         return (
                             <div
                                 key={recipe.id}
@@ -146,7 +146,7 @@ const Cook = () => {
                                         alt={recipe.name}
                                         style={styles.recipeImg}
                                         onError={(e) => {
-                                            e.currentTarget.src = `https://source.unsplash.com/600x400/?food,${encodeURIComponent(recipe.name)}`;
+                                            e.currentTarget.src = '/api/category-image/vegetable/';
                                         }}
                                     />
                                 </div>

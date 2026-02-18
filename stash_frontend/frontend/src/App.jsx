@@ -2,6 +2,9 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/Layout';
 import Home from './pages/Home';
 import ShopOwnerDashboard from './pages/ShopOwnerDashboard';
+import ShopOwnerProducts from './pages/ShopOwnerProducts';
+import ShopOwnerOrders from './pages/ShopOwnerOrders';
+import ShopOwnerFeedback from './pages/ShopOwnerFeedback';
 import AdminDashboard from './pages/AdminDashboard';
 import Login from './pages/Login';
 import Register from './pages/Register';
@@ -40,7 +43,11 @@ function App() {
           <Route path="/customer/orders" element={<Orders />} />
           <Route path="/customer/payment/:id" element={<Payment />} />
 
-          <Route path="shop-owner" element={<ShopOwnerDashboard />} />
+          <Route path="shop-owner" element={<Navigate to="/shop-owner/dashboard" replace />} />
+          <Route path="shop-owner/dashboard" element={<ShopOwnerDashboard />} />
+          <Route path="shop-owner/products" element={<ShopOwnerProducts />} />
+          <Route path="shop-owner/orders" element={<ShopOwnerOrders />} />
+          <Route path="shop-owner/feedback" element={<ShopOwnerFeedback />} />
           <Route path="admin" element={<AdminDashboard />} />
         </Route>
       </Routes>

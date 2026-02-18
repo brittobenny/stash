@@ -1,6 +1,6 @@
 from django.contrib.auth.models import User
 from rest_framework import serializers
-from .models import UserProfile
+from .models import UserProfile, Notification
 
 class RegisterSerializer(serializers.Serializer):
     name = serializers.CharField()
@@ -28,3 +28,18 @@ class RegisterSerializer(serializers.Serializer):
         )
 
         return user
+
+
+class ProfileSerializer(serializers.ModelSerializer):
+    name = serializers.CharField(source="user.first_name", required=False, allow_blank=True)
+    email = serializers.EmailField(source="user.email", read_only=True)
+
+    class Meta:
+        model = UserProfile
+        fields = ["name", "email", "mobile_number", "address", "location", "role"]
+
+
+class NotificationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Notification
+        fields = ["id", "title", "message", "type", "data", "is_read", "created_at"]

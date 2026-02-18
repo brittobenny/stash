@@ -1,15 +1,17 @@
 from django.db import transaction
-from django.db.models import F
+from django.db.models import F, Q
 from django.utils import timezone
 
 from rest_framework import generics, permissions
+from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from .models import Product, Cart, CartItem, Order, OrderItem, Category
+from accounts.models import UserProfile, Notification
 from .serializers import ProductSerializer, CartSerializer, OrderSerializer, CategorySerializer
-from .permissions import IsShopOwner
+from .permissions import IsShopOwner, IsAdmin
 
 from inventory.models import PantryItem, Ingredient
 
@@ -20,6 +22,19 @@ from inventory.models import PantryItem, Ingredient
 def _get_cart(user):
     cart, _ = Cart.objects.get_or_create(user=user)
     return cart
+
+
+def _notify(user, title, message, type="order", data=None):
+    try:
+        Notification.objects.create(
+            user=user,
+            title=title,
+            message=message,
+            type=type,
+            data=data or {},
+        )
+    except Exception:
+        pass
 
 
 def _normalize_unit_key(unit: str) -> str:
@@ -82,7 +97,14 @@ class MyProductsView(generics.ListAPIView):
     permission_classes = [IsShopOwner]
 
     def get_queryset(self):
-        return Product.objects.filter(owner=self.request.user)
+        qs = Product.objects.filter(owner=self.request.user)
+        q = self.request.query_params.get("q")
+        category = self.request.query_params.get("category")
+        if q:
+            qs = qs.filter(name__icontains=q)
+        if category:
+            qs = qs.filter(category_id=category)
+        return qs
 
 
 class UpdateProductView(generics.UpdateAPIView):
@@ -103,13 +125,26 @@ class DeleteProductView(generics.DestroyAPIView):
 class PublicProductListView(generics.ListAPIView):
     serializer_class = ProductSerializer
     permission_classes = [permissions.AllowAny]
-    queryset = Product.objects.filter(is_active=True)
+
+    def get_queryset(self):
+        qs = Product.objects.filter(is_active=True)
+        q = self.request.query_params.get("q")
+        category = self.request.query_params.get("category")
+        location = self.request.query_params.get("location")
+        if q:
+            qs = qs.filter(name__icontains=q)
+        if category:
+            qs = qs.filter(category_id=category)
+        if location:
+            qs = qs.filter(owner__userprofile__location__icontains=location)
+        return qs
 
 
 class CategoryListCreateView(generics.ListCreateAPIView):
     serializer_class = CategorySerializer
     permission_classes = [IsShopOwner]
     queryset = Category.objects.all()
+    parser_classes = [MultiPartParser, FormParser]
 
 
 # ----------------------------
@@ -129,6 +164,10 @@ def cart_add(request):
     """
     product_id = request.data.get("product_id")
     qty = int(request.data.get("quantity", 1))
+
+    profile = UserProfile.objects.filter(user=request.user).first()
+    if not profile or not (profile.address and profile.location):
+        return Response({"error": "profile_incomplete"}, status=400)
 
     if not product_id or qty <= 0:
         return Response({"error": "product_id and quantity>0 required"}, status=400)
@@ -180,6 +219,9 @@ def checkout(request):
     Also snapshots unit/pack_size/pack_unit into OrderItem.
     """
     cart = _get_cart(request.user)
+    profile = UserProfile.objects.filter(user=request.user).first()
+    if not profile or not (profile.address and profile.location):
+        return Response({"error": "profile_incomplete"}, status=400)
     cart_items = list(CartItem.objects.select_related("product").filter(cart=cart))
     if not cart_items:
         return Response({"error": "Cart is empty"}, status=400)
@@ -222,6 +264,14 @@ def checkout(request):
 
         CartItem.objects.filter(cart=cart).delete()
 
+    _notify(
+        request.user,
+        "Order placed",
+        f"Your order #{order.id} has been placed.",
+        type="order",
+        data={"order_id": order.id, "status": order.status},
+    )
+
     return Response(OrderSerializer(order).data, status=201)
 
 
@@ -233,14 +283,23 @@ def cancel_order(request, order_id):
         if not order:
             return Response({"error": "Order not found"}, status=404)
 
-        if order.status != "PLACED":
+        if order.status not in {"PLACED", "CONFIRMED"}:
             return Response({"error": f"Cannot cancel in status {order.status}"}, status=400)
 
         for oi in OrderItem.objects.filter(order=order):
             Product.objects.filter(id=oi.product_id).update(stock_quantity=F("stock_quantity") + oi.quantity)
 
         order.status = "CANCELLED"
-        order.save(update_fields=["status"])
+        order.cancelled_at = timezone.now()
+        order.save(update_fields=["status", "cancelled_at"])
+
+    _notify(
+        request.user,
+        "Order cancelled",
+        f"Your order #{order.id} has been cancelled.",
+        type="order",
+        data={"order_id": order.id, "status": order.status},
+    )
 
     return Response(OrderSerializer(order).data)
 
@@ -251,19 +310,35 @@ def mark_delivered(request, order_id):
     order = Order.objects.filter(id=order_id, user=request.user).first()
     if not order:
         return Response({"error": "Order not found"}, status=404)
-    if order.status != "PLACED":
+    if order.status not in {"PLACED", "CONFIRMED", "OUT_FOR_DELIVERY"}:
         return Response({"error": f"Cannot deliver in status {order.status}"}, status=400)
 
     order.status = "DELIVERED"
     order.delivered_at = timezone.now()
     order.needs_pantry_confirm = True
     order.save(update_fields=["status", "delivered_at", "needs_pantry_confirm"])
+
+    _notify(
+        request.user,
+        "Order delivered",
+        f"Your order #{order.id} is marked as delivered.",
+        type="delivery",
+        data={"order_id": order.id, "status": order.status},
+    )
     return Response(OrderSerializer(order).data)
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def list_orders(request):
     orders = Order.objects.filter(user=request.user).order_by("-created_at")
+    status = request.query_params.get("status")
+    q = request.query_params.get("q")
+    if status:
+        orders = orders.filter(status=status)
+    if q:
+        q = q.strip()
+        if q.isdigit():
+            orders = orders.filter(id=int(q))
     return Response(OrderSerializer(orders, many=True).data)
 
 
@@ -367,9 +442,131 @@ def confirm_add_to_pantry(request, order_id):
         order.needs_pantry_confirm = False
         order.save(update_fields=["status", "needs_pantry_confirm", "pantry_applied"])
 
+    _notify(
+        request.user,
+        "Pantry updated",
+        f"Items from order #{order.id} were added to your pantry.",
+        type="system",
+        data={"order_id": order.id, "status": order.status},
+    )
+
     return Response({
         "status": "ok",
         "order_id": order.id,
         "applied": applied,
         "skipped": skipped
     }, status=200)
+
+
+# ----------------------------
+# SHOP OWNER ORDER APIs
+# ----------------------------
+@api_view(["GET"])
+@permission_classes([IsShopOwner])
+def owner_orders(request):
+    orders = Order.objects.filter(items__product__owner=request.user).distinct().order_by("-created_at")
+    status = request.query_params.get("status")
+    q = request.query_params.get("q")
+    if status:
+        orders = orders.filter(status=status)
+    if q:
+        q = q.strip()
+        if q.isdigit():
+            orders = orders.filter(id=int(q))
+        else:
+            orders = orders.filter(Q(user__email__icontains=q) | Q(user__username__icontains=q))
+    return Response(OrderSerializer(orders, many=True).data)
+
+
+@api_view(["POST"])
+@permission_classes([IsShopOwner])
+def owner_update_order_status(request, order_id):
+    new_status = request.data.get("status")
+    allowed = {"CONFIRMED", "OUT_FOR_DELIVERY", "DELIVERED"}
+    if new_status not in allowed:
+        return Response({"error": "Invalid status"}, status=400)
+
+    order = Order.objects.filter(id=order_id, items__product__owner=request.user).distinct().first()
+    if not order:
+        return Response({"error": "Order not found"}, status=404)
+
+    # Ensure the order only contains items from this shop (simplified constraint)
+    other_shop_items = OrderItem.objects.filter(order=order).exclude(product__owner=request.user).exists()
+    if other_shop_items:
+        return Response({"error": "Order contains items from multiple shops"}, status=400)
+
+    order.status = new_status
+    if new_status == "DELIVERED":
+        order.delivered_at = timezone.now()
+        order.needs_pantry_confirm = True
+    order.save(update_fields=["status", "delivered_at", "needs_pantry_confirm"])
+
+    _notify(
+        order.user,
+        f"Order {new_status.replace('_', ' ').title()}",
+        f"Your order #{order.id} is now {new_status.replace('_', ' ').lower()}.",
+        type="delivery",
+        data={"order_id": order.id, "status": order.status},
+    )
+    return Response(OrderSerializer(order).data)
+
+
+# ----------------------------
+# ADMIN ORDER APIs
+# ----------------------------
+@api_view(["GET"])
+@permission_classes([IsAdmin])
+def admin_orders(request):
+    orders = Order.objects.all().order_by("-created_at")
+    status = request.query_params.get("status")
+    q = request.query_params.get("q")
+    if status:
+        orders = orders.filter(status=status)
+    if q:
+        q = q.strip()
+        if q.isdigit():
+            orders = orders.filter(id=int(q))
+        else:
+            orders = orders.filter(Q(user__email__icontains=q) | Q(user__username__icontains=q))
+    return Response(OrderSerializer(orders, many=True).data)
+
+
+@api_view(["POST"])
+@permission_classes([IsAdmin])
+def admin_update_order_status(request, order_id):
+    new_status = request.data.get("status")
+    allowed = {"PLACED", "CONFIRMED", "OUT_FOR_DELIVERY", "DELIVERED", "COMPLETED", "CANCELLED", "REFUNDED"}
+    if new_status not in allowed:
+        return Response({"error": "Invalid status"}, status=400)
+
+    order = Order.objects.filter(id=order_id).first()
+    if not order:
+        return Response({"error": "Order not found"}, status=404)
+
+    previous_status = order.status
+    order.status = new_status
+    if new_status == "DELIVERED":
+        order.delivered_at = timezone.now()
+        order.needs_pantry_confirm = True
+    if new_status == "CANCELLED":
+        order.cancelled_at = timezone.now()
+        if previous_status not in {"CANCELLED", "REFUNDED"}:
+            for oi in OrderItem.objects.filter(order=order):
+                Product.objects.filter(id=oi.product_id).update(stock_quantity=F("stock_quantity") + oi.quantity)
+    if new_status == "REFUNDED":
+        order.refunded_at = timezone.now()
+        if previous_status not in {"CANCELLED", "REFUNDED"}:
+            for oi in OrderItem.objects.filter(order=order):
+                Product.objects.filter(id=oi.product_id).update(stock_quantity=F("stock_quantity") + oi.quantity)
+    if new_status in {"COMPLETED", "REFUNDED", "CANCELLED"}:
+        order.needs_pantry_confirm = False
+    order.save(update_fields=["status", "delivered_at", "needs_pantry_confirm", "cancelled_at", "refunded_at"])
+
+    _notify(
+        order.user,
+        f"Order {new_status.replace('_', ' ').title()}",
+        f"Your order #{order.id} is now {new_status.replace('_', ' ').lower()}.",
+        type="order",
+        data={"order_id": order.id, "status": order.status},
+    )
+    return Response(OrderSerializer(order).data)

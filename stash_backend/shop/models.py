@@ -8,6 +8,7 @@ User = settings.AUTH_USER_MODEL
 
 class Category(models.Model):
     name = models.CharField(max_length=100, unique=True)
+    image = models.ImageField(upload_to="categories/", blank=True, null=True)
 
     def __str__(self):
         return self.name
@@ -95,9 +96,12 @@ class CartItem(models.Model):
 class Order(models.Model):
     STATUS = (
         ("PLACED", "PLACED"),
-        ("CANCELLED", "CANCELLED"),
+        ("CONFIRMED", "CONFIRMED"),
+        ("OUT_FOR_DELIVERY", "OUT_FOR_DELIVERY"),
         ("DELIVERED", "DELIVERED"),
         ("COMPLETED", "COMPLETED"),
+        ("CANCELLED", "CANCELLED"),
+        ("REFUNDED", "REFUNDED"),
     )
 
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="orders")
@@ -106,10 +110,13 @@ class Order(models.Model):
     total_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
 
     delivered_at = models.DateTimeField(null=True, blank=True)
+    cancelled_at = models.DateTimeField(null=True, blank=True)
+    refunded_at = models.DateTimeField(null=True, blank=True)
     needs_pantry_confirm = models.BooleanField(default=False)
     pantry_applied = models.BooleanField(default=False)
 
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
         return f"Order({self.id}) - {self.user} - {self.status}"

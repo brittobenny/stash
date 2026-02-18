@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { PackageCheck, Truck, ClipboardList } from 'lucide-react';
+import { PackageCheck, Truck, ClipboardList, XCircle } from 'lucide-react';
 import { shopService } from '../services/api';
 import '../styles/global.css';
 
@@ -10,11 +10,12 @@ const Orders = () => {
     const [loading, setLoading] = useState(true);
     const [updateInfo, setUpdateInfo] = useState(null);
     const [updateError, setUpdateError] = useState('');
+    const [statusFilter, setStatusFilter] = useState('');
 
     const fetchOrders = async () => {
         setLoading(true);
         try {
-            const res = await shopService.listOrders();
+            const res = await shopService.listOrders(statusFilter ? { status: statusFilter } : {});
             setOrders(res.data || []);
         } catch (err) {
             setOrders([]);
@@ -25,10 +26,10 @@ const Orders = () => {
 
     useEffect(() => {
         fetchOrders();
-    }, []);
+    }, [statusFilter]);
 
-    const handleMarkDelivered = async (orderId) => {
-        await shopService.markDelivered(orderId);
+    const handleCancelOrder = async (orderId) => {
+        await shopService.cancelOrder(orderId);
         fetchOrders();
     };
 
@@ -57,9 +58,24 @@ const Orders = () => {
                     <h1 style={styles.title}>Orders</h1>
                     <p style={styles.subtitle}>Track delivery and add items to your pantry.</p>
                 </div>
-                <button style={styles.refreshBtn} onClick={fetchOrders}>
-                    Refresh
-                </button>
+                <div style={styles.headerActions}>
+                    <select
+                        value={statusFilter}
+                        onChange={(e) => setStatusFilter(e.target.value)}
+                        style={styles.filterSelect}
+                    >
+                        <option value="">All Status</option>
+                        <option value="PLACED">Placed</option>
+                        <option value="CONFIRMED">Confirmed</option>
+                        <option value="OUT_FOR_DELIVERY">Out for delivery</option>
+                        <option value="DELIVERED">Delivered</option>
+                        <option value="COMPLETED">Completed</option>
+                        <option value="CANCELLED">Cancelled</option>
+                    </select>
+                    <button style={styles.refreshBtn} onClick={fetchOrders}>
+                        Refresh
+                    </button>
+                </div>
             </div>
             {updateError && <div style={styles.errorBanner}>{updateError}</div>}
 
@@ -102,9 +118,9 @@ const Orders = () => {
                             </div>
 
                             <div style={styles.actions}>
-                                {order.status === 'PLACED' && (
-                                    <button style={styles.actionBtn} onClick={() => handleMarkDelivered(order.id)}>
-                                        <Truck size={16} /> Mark Delivered
+                                {(order.status === 'PLACED' || order.status === 'CONFIRMED') && (
+                                    <button style={styles.cancelBtn} onClick={() => handleCancelOrder(order.id)}>
+                                        <XCircle size={16} /> Cancel Order
                                     </button>
                                 )}
                                 {order.status === 'DELIVERED' && order.needs_pantry_confirm && (
@@ -145,9 +161,11 @@ const Orders = () => {
 const styles = {
     page: { maxWidth: '1100px', margin: '0 auto', padding: '2rem' },
     header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem', flexWrap: 'wrap', gap: '1rem' },
+    headerActions: { display: 'flex', alignItems: 'center', gap: '0.8rem' },
     title: { fontSize: '2.2rem', color: 'var(--color-text)' },
     subtitle: { color: 'var(--color-text-light)' },
     refreshBtn: { background: 'var(--color-surface)', border: '1px solid var(--color-border)', color: 'var(--color-text)', padding: '8px 14px', borderRadius: '999px', cursor: 'pointer' },
+    filterSelect: { padding: '8px 12px', borderRadius: '999px', border: '1px solid var(--color-border)', background: '#fff' },
     errorBanner: { background: 'rgba(239,68,68,0.12)', color: '#ef4444', padding: '10px 14px', borderRadius: '10px', marginBottom: '1rem', border: '1px solid rgba(239,68,68,0.2)' },
     loading: { textAlign: 'center', color: 'var(--color-text-light)', padding: '3rem' },
     empty: { textAlign: 'center', padding: '3rem', background: 'var(--color-surface)', borderRadius: '16px', border: '1px dashed var(--color-border)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem' },
@@ -161,6 +179,7 @@ const styles = {
     more: { color: 'var(--color-text-light)', fontSize: '0.85rem' },
     actions: { display: 'flex', gap: '0.6rem', alignItems: 'center', flexWrap: 'wrap' },
     actionBtn: { background: 'var(--color-primary)', color: '#ffffff', border: 'none', padding: '8px 12px', borderRadius: '10px', fontWeight: '700', display: 'inline-flex', alignItems: 'center', gap: '6px', cursor: 'pointer' },
+    cancelBtn: { background: 'rgba(239,68,68,0.15)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.2)', padding: '8px 12px', borderRadius: '10px', fontWeight: '700', display: 'inline-flex', alignItems: 'center', gap: '6px', cursor: 'pointer' },
     completed: { color: 'var(--color-text)', fontWeight: '700' },
     pantryResult: { marginTop: '1rem', background: 'var(--color-surface-2)', borderRadius: '12px', padding: '0.8rem', border: '1px solid var(--color-border)' },
     pantryLine: { color: 'var(--color-text-light)', fontSize: '0.85rem', marginTop: '0.4rem' },

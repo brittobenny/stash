@@ -20,10 +20,10 @@ const RecipeDetail = () => {
     const [addingMissing, setAddingMissing] = useState(false);
     const [addMissingMsg, setAddMissingMsg] = useState('');
 
-    const getRecipeImage = (url, name) => {
-        const fallback = `https://source.unsplash.com/1200x800/?food,${encodeURIComponent(name || 'recipe')}`;
-        if (!url || !/^https?:\/\//i.test(url)) return fallback;
-        return `/api/image-proxy/?url=${encodeURIComponent(url.trim())}&fallback=${encodeURIComponent(fallback)}`;
+    const getRecipeImage = (url) => {
+        const localFallback = '/api/category-image/vegetable/';
+        if (!url || !/^https?:\/\//i.test(url)) return localFallback;
+        return `/api/image-proxy/?url=${encodeURIComponent(url.trim())}`;
     };
 
     useEffect(() => {
@@ -33,7 +33,7 @@ const RecipeDetail = () => {
             try {
                 const res = await recipeService.getRecipeDetail(id);
                 setRecipe(res.data);
-                setImageSrc(getRecipeImage(res.data?.image_url || '', res.data?.name || 'recipe'));
+                setImageSrc(getRecipeImage(res.data?.image_url || ''));
                 const baseList = (res.data?.ingredient_status || []).map((item) => ({
                     name: item.name,
                     grams: Number(item.needed_g || 0),
@@ -287,7 +287,7 @@ const RecipeDetail = () => {
                         alt={recipe.name}
                         style={styles.heroImg}
                         onError={() => {
-                            setImageSrc(`https://source.unsplash.com/1200x800/?food,${encodeURIComponent(recipe.name)}`);
+                            setImageSrc('/api/category-image/vegetable/');
                         }}
                     />
                 </div>

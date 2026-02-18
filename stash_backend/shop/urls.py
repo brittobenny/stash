@@ -16,6 +16,10 @@ from .views import (
     mark_delivered,
     confirm_add_to_pantry,
     list_orders,
+    owner_orders,
+    owner_update_order_status,
+    admin_orders,
+    admin_update_order_status,
 )
 
 urlpatterns = [
@@ -38,4 +42,12 @@ urlpatterns = [
     path("orders/<int:order_id>/cancel/", cancel_order),
     path("orders/<int:order_id>/delivered/", mark_delivered),
     path("orders/<int:order_id>/confirm-pantry/", confirm_add_to_pantry),
+
+    # shop owner orders
+    path("owner/orders/", owner_orders),
+    path("owner/orders/<int:order_id>/status/", owner_update_order_status),
+
+    # admin orders
+    path("admin/orders/", admin_orders),
+    path("admin/orders/<int:order_id>/status/", admin_update_order_status),
 ]

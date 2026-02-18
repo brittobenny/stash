@@ -263,17 +263,92 @@ const Pantry = () => {
         }
     };
 
+    const emojiSvg = (emoji) =>
+        `data:image/svg+xml;utf8,${encodeURIComponent(
+            `<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><rect width='120' height='120' rx='60' ry='60' fill='#f7f7f7'/><text x='60' y='74' font-family='Apple Color Emoji, Segoe UI Emoji, Noto Color Emoji, sans-serif' font-size='44' text-anchor='middle'>${emoji}</text></svg>`
+        )}`;
+
     const placeholderSvg = (letter) =>
         `data:image/svg+xml;utf8,${encodeURIComponent(
             `<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><rect width='120' height='120' rx='60' ry='60' fill='#f1f1f1'/><text x='60' y='70' font-family='Arial' font-size='36' text-anchor='middle' fill='#999'>${letter}</text></svg>`
         )}`;
 
+    const pickEmojiForItem = (item) => {
+        const name = (item.ingredient_name || item.name || '').toLowerCase();
+        const category = normalizeCategory(item).toLowerCase();
+        const map = {
+            onion: '🧅',
+            tomato: '🍅',
+            potato: '🥔',
+            carrot: '🥕',
+            garlic: '🧄',
+            ginger: '🫚',
+            pepper: '🫑',
+            chili: '🌶️',
+            cauliflower: '🥦',
+            broccoli: '🥦',
+            spinach: '🥬',
+            lettuce: '🥬',
+            cabbage: '🥬',
+            cucumber: '🥒',
+            corn: '🌽',
+            rice: '🍚',
+            wheat: '🌾',
+            oats: '🌾',
+            flour: '🌾',
+            pasta: '🍝',
+            noodle: '🍜',
+            milk: '🥛',
+            cheese: '🧀',
+            butter: '🧈',
+            yogurt: '🥛',
+            egg: '🥚',
+            chicken: '🍗',
+            beef: '🥩',
+            pork: '🍖',
+            fish: '🐟',
+            shrimp: '🦐',
+            prawn: '🦐',
+            salt: '🧂',
+            sugar: '🧂',
+            oil: '🫒',
+            olive: '🫒',
+            lemon: '🍋',
+            lime: '🍋',
+            apple: '🍎',
+            banana: '🍌',
+            orange: '🍊',
+            grape: '🍇',
+            strawberry: '🍓',
+        };
+        const key = Object.keys(map).find((k) => name.includes(k));
+        if (key) return map[key];
+        if (category.includes('vegetable')) return '🥦';
+        if (category.includes('fruit')) return '🍎';
+        if (category.includes('grain')) return '🌾';
+        if (category.includes('dairy')) return '🧀';
+        if (category.includes('meat')) return '🍖';
+        if (category.includes('spice')) return '🌶️';
+        if (category.includes('oil')) return '🫒';
+        return '';
+    };
+
     const getItemImage = (item) => {
         const raw = item.image_url ? String(item.image_url).trim() : '';
-        if (raw && !['null', 'none', 'nan', 'undefined'].includes(raw.toLowerCase())) return raw;
+        const lower = raw.toLowerCase();
+        const isValidRaw =
+            raw &&
+            !['null', 'none', 'nan', 'undefined'].includes(lower) &&
+            (raw.startsWith('/media/') || raw.startsWith('/api/'));
+
+        if (isValidRaw) return raw;
+
+        const emoji = pickEmojiForItem(item);
+        if (emoji) return emojiSvg(emoji);
+
         const name = item.ingredient_name || item.name || 'ingredient';
-        const query = encodeURIComponent(name);
-        return `https://source.unsplash.com/120x120/?food,${query}`;
+        const initial = (name[0] || 'S').toUpperCase();
+        return placeholderSvg(initial);
     };
 
     const getCategoryImage = (category) => {
@@ -289,7 +364,7 @@ const Pantry = () => {
             spice: '/api/category-image/spice/',
             spices: '/api/category-image/spice/',
         };
-        return map[key] || `https://source.unsplash.com/400x220/?food,${encodeURIComponent(category || 'ingredient')}`;
+        return map[key] || '/api/category-image/vegetable/';
     };
 
     const categorySummary = orderedCategories.map((category) => {
@@ -382,15 +457,15 @@ const Pantry = () => {
                                 return (
                                 <div key={category} style={columnStyle}>
                                     <div style={styles.categoryImageWrap}>
-                                        <img
-                                            src={getCategoryImage(category)}
-                                            alt={`${category} category`}
-                                            style={styles.categoryImage}
-                                            loading="lazy"
-                                            onError={(e) => {
-                                                e.currentTarget.src = `https://source.unsplash.com/400x220/?food,${encodeURIComponent(category || 'ingredient')}`;
-                                            }}
-                                        />
+                                          <img
+                                              src={getCategoryImage(category)}
+                                              alt={`${category} category`}
+                                              style={styles.categoryImage}
+                                              loading="lazy"
+                                              onError={(e) => {
+                                                  e.currentTarget.src = '/api/category-image/vegetable/';
+                                              }}
+                                          />
                                         <div style={styles.categoryOverlay}>
                                             <span style={styles.categoryOverlayText}>{category.toUpperCase()}</span>
                                         </div>

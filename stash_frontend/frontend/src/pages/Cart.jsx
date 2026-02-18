@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ShoppingBag, X, Minus, Plus, CreditCard, ArrowLeft, CheckCircle } from 'lucide-react';
-import { shopService } from '../services/api';
+import { shopService, accountService } from '../services/api';
 import '../styles/global.css';
 
 const Cart = () => {
@@ -9,9 +9,11 @@ const Cart = () => {
     const [cartItems, setCartItems] = useState([]);
     const [loading, setLoading] = useState(false);
     const [checkingOut, setCheckingOut] = useState(false);
+    const [profileComplete, setProfileComplete] = useState(true);
 
     useEffect(() => {
         fetchCart();
+        fetchProfile();
     }, []);
 
     const fetchCart = async () => {
@@ -49,6 +51,10 @@ const Cart = () => {
     };
 
     const handleCheckout = async () => {
+        if (!profileComplete) {
+            alert('Please complete your profile (address & location) before checkout.');
+            return;
+        }
         if (!confirm('Proceed to checkout?')) return;
         setCheckingOut(true);
         try {
@@ -95,6 +101,9 @@ const Cart = () => {
                 </div>
             ) : (
                 <div style={styles.content}>
+                    {!profileComplete && (
+                        <div style={styles.alert}>Complete your profile (address & location) to checkout.</div>
+                    )}
                     <div style={styles.itemsList}>
                         {cartItems.map(item => (
                             <div key={item.id} style={styles.itemRow}>
@@ -150,7 +159,7 @@ const Cart = () => {
                             <span>${calculateTotal().toFixed(2)}</span>
                         </div>
 
-                        <button style={styles.checkoutBtn} onClick={handleCheckout} disabled={checkingOut}>
+                        <button style={{ ...styles.checkoutBtn, opacity: profileComplete ? 1 : 0.6 }} onClick={handleCheckout} disabled={checkingOut || !profileComplete}>
                             {checkingOut ? 'Processing...' : (
                                 <>Checkout <CreditCard size={18} /></>
                             )}
@@ -170,6 +179,7 @@ const styles = {
     emptyState: { textAlign: 'center', padding: '4rem', background: 'var(--color-surface)', borderRadius: '16px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem', border: '1px solid var(--color-border)' },
 
     content: { display: 'grid', gridTemplateColumns: '1fr 350px', gap: '2rem' },
+    alert: { background: 'rgba(225,29,46,0.1)', color: 'var(--color-primary)', border: '1px solid rgba(225,29,46,0.2)', padding: '12px 16px', borderRadius: '12px', marginBottom: '1rem', fontWeight: '600' },
 
     itemsList: { display: 'flex', flexDirection: 'column', gap: '1rem' },
     itemRow: { display: 'flex', alignItems: 'center', gap: '1rem', background: 'var(--color-surface)', padding: '1rem', borderRadius: '12px', boxShadow: 'var(--shadow-sm)', border: '1px solid var(--color-border)' },
@@ -190,3 +200,11 @@ const styles = {
 };
 
 export default Cart;
+    const fetchProfile = async () => {
+        try {
+            const res = await accountService.getProfile();
+            setProfileComplete(Boolean(res.data?.profile_completed));
+        } catch (err) {
+            setProfileComplete(true);
+        }
+    };

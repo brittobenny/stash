@@ -57,6 +57,14 @@ export const authService = {
     }
 };
 
+export const accountService = {
+    getProfile: () => api.get('/accounts/profile/'),
+    updateProfile: (payload) => api.patch('/accounts/profile/', payload),
+    getNotifications: (params = {}) => api.get('/accounts/notifications/', { params }),
+    markNotificationRead: (id) => api.post(`/accounts/notifications/${id}/`),
+    markAllNotificationsRead: () => api.post('/accounts/notifications/all/'),
+};
+
 export const pantryService = {
     getItems: () => api.get('/pantry/'),
     addItem: (item) => api.post('/pantry/add/', item),
@@ -86,33 +94,39 @@ export const shopService = {
     updateCartItem: (itemId, quantity) => api.post(`/shop/cart/item/${itemId}/`, { quantity }),
     getCart: () => api.get('/shop/cart/'),
     checkout: () => api.post('/shop/checkout/'),
-    listOrders: () => api.get('/shop/orders/'),
+    listOrders: (params = {}) => api.get('/shop/orders/', { params }),
     markDelivered: (orderId) => api.post(`/shop/orders/${orderId}/delivered/`),
+    cancelOrder: (orderId) => api.post(`/shop/orders/${orderId}/cancel/`),
     confirmAddToPantry: (orderId, addToPantry = true) =>
         api.post(`/shop/orders/${orderId}/confirm-pantry/`, { add_to_pantry: addToPantry }),
 };
 
 export const shopOwnerService = {
     addProduct: (product) => api.post('/shop/products/add/', product),
-    getMyProducts: () => api.get('/shop/products/my/'),
+    getMyProducts: (params = {}) => api.get('/shop/products/my/', { params }),
     updateProduct: (id, product) => api.put(`/shop/products/update/${id}/`, product),
     deleteProduct: (id) => api.delete(`/shop/products/delete/${id}/`),
     listCategories: () => api.get('/shop/categories/'),
-    createCategory: (name) => api.post('/shop/categories/', { name }),
+    createCategory: (name, imageFile = null) => {
+        const formData = new FormData();
+        formData.append('name', name);
+        if (imageFile) {
+            formData.append('image', imageFile);
+        }
+        return api.post('/shop/categories/', formData, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+        });
+    },
+    listOrders: (params = {}) => api.get('/shop/owner/orders/', { params }),
+    updateOrderStatus: (orderId, status) => api.post(`/shop/owner/orders/${orderId}/status/`, { status }),
 };
 
 export const adminService = {
-    // Note: The backend endpoints for orders seem to be under /api/shop/orders/ or similar.
-    // Based on shop/urls.py: path("orders/<int:order_id>/delivered/", mark_delivered)
-    // We haven't built a "list all orders" endpoint in the snippets seen, 
-    // but assuming there might be one or we use what we have.
-    // For now, let's assume we can fetch orders (maybe reuse a shop endpoint or valid admin endpoint if it exists)
-    // If not, we'll mock the fetch but use real actions for status.
-    // Actually, let's check if there is an endpoint for listing orders. 
-    // shop/views.py isn't visible but urls.py shows checkout, cancel, delivered.
-    // We'll add the actions we know exist.
-    markDelivered: (orderId) => api.post(`/shop/orders/${orderId}/delivered/`),
-    cancelOrder: (orderId) => api.post(`/shop/orders/${orderId}/cancel/`),
+    getSummary: () => api.get('/accounts/admin/summary/'),
+    listUsers: () => api.get('/accounts/admin/users/'),
+    listShops: () => api.get('/accounts/admin/users/?role=shopowner'),
+    listOrders: (params = {}) => api.get('/shop/admin/orders/', { params }),
+    updateOrderStatus: (orderId, status) => api.post(`/shop/admin/orders/${orderId}/status/`, { status }),
 };
 
 export default api;

@@ -9,7 +9,7 @@ from .models import Category, Product, Cart, CartItem, Order, OrderItem
 class CategorySerializer(serializers.ModelSerializer):
     class Meta:
         model = Category
-        fields = ["id", "name"]
+        fields = ["id", "name", "image"]
 
 
 # -------------------
@@ -17,6 +17,7 @@ class CategorySerializer(serializers.ModelSerializer):
 # -------------------
 class ProductSerializer(serializers.ModelSerializer):
     owner = serializers.ReadOnlyField(source="owner.username")
+    owner_location = serializers.ReadOnlyField(source="owner.userprofile.location")
     category_name = serializers.ReadOnlyField(source="category.name")
 
     # show ingredient name in response
@@ -36,6 +37,7 @@ class ProductSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "owner",
+            "owner_location",
             "category",
             "category_name",
             "name",
@@ -94,15 +96,20 @@ class OrderItemSerializer(serializers.ModelSerializer):
 
 class OrderSerializer(serializers.ModelSerializer):
     items = OrderItemSerializer(many=True, read_only=True)
+    user_email = serializers.ReadOnlyField(source="user.email")
 
     class Meta:
         model = Order
         fields = [
             "id",
+            "user_email",
             "status",
             "total_amount",
             "created_at",
+            "updated_at",
             "delivered_at",
+            "cancelled_at",
+            "refunded_at",
             "needs_pantry_confirm",
             "pantry_applied",
             "items",
