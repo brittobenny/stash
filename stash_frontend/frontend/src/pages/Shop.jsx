@@ -95,6 +95,17 @@ const Shop = () => {
         return aMatch ? -1 : 1;
     });
 
+    const resolveProductImage = (product) => {
+        const raw = String(product?.image || '').trim();
+        if (!raw) {
+            return `https://placehold.co/600x400?text=${encodeURIComponent(product?.name || 'Product')}`;
+        }
+        if (raw.startsWith('http://') || raw.startsWith('https://')) {
+            return raw;
+        }
+        return raw.startsWith('/') ? raw : `/${raw}`;
+    };
+
     return (
         <div style={styles.page}>
             <header style={styles.header}>
@@ -142,11 +153,7 @@ const Shop = () => {
                                 className="fade-up hover-float"
                             >
                                 {(() => {
-                                    const img = product.image
-                                        ? (String(product.image).startsWith('http')
-                                            ? product.image
-                                            : `http://127.0.0.1:8000${product.image}`)
-                                        : `https://placehold.co/600x400?text=${encodeURIComponent(product.name)}`;
+                                    const img = resolveProductImage(product);
                                     return (
                                         <div style={styles.cardImage}>
                                             <img

@@ -68,20 +68,6 @@ const RecipeDetail = () => {
         setCookList(next);
     };
 
-    const updateNutritionProgress = (nutritionData) => {
-        const today = new Date().toISOString().slice(0, 10);
-        const existing = JSON.parse(localStorage.getItem('nutrition_progress') || '{}');
-        const base = existing.date === today ? existing : { date: today, calories: 0, protein: 0, carbs: 0, fat: 0 };
-        const updated = {
-            date: today,
-            calories: Number(base.calories || 0) + Number(nutritionData.calories || 0),
-            protein: Number(base.protein || 0) + Number(nutritionData.protein || 0),
-            carbs: Number(base.carbs || 0) + Number(nutritionData.carbs || 0),
-            fat: Number(base.fat || 0) + Number(nutritionData.fat || 0),
-        };
-        localStorage.setItem('nutrition_progress', JSON.stringify(updated));
-    };
-
     const handleCookConfirm = async () => {
         setCooking(true);
         setCookResult(null);
@@ -91,12 +77,7 @@ const RecipeDetail = () => {
                 .map((i) => ({ name: i.name, grams: i.grams }));
             const res = await recipeService.cookRecipe(recipe.id, allowPartial, ingredients);
             setCookResult(res.data);
-            if ((res.data?.status === 'success' || res.data?.status === 'partial') && res.data?.nutrition) {
-                updateNutritionProgress(res.data.nutrition);
-            }
             if (res.data?.status === 'success' || res.data?.status === 'partial') {
-                const cookedCount = parseInt(localStorage.getItem('cooked_count') || '0', 10);
-                localStorage.setItem('cooked_count', String(cookedCount + 1));
                 localStorage.setItem('pantry_refresh', Date.now().toString());
                 setShowCookModal(false);
             }
@@ -387,6 +368,11 @@ const RecipeDetail = () => {
                     {cookResult.deducted?.length > 0 && (
                         <div style={styles.cookLine}>
                             Deducted: {cookResult.deducted.map((d) => `${d.ingredient} (${d.used_g} g)`).join(', ')}
+                        </div>
+                    )}
+                    {cookResult.nutrition_scoring && (
+                        <div style={styles.cookLine}>
+                            Score: {cookResult.nutrition_scoring.daily_score} today · Weekly avg {Math.round(cookResult.nutrition_scoring.weekly_score || 0)} · L{cookResult.nutrition_scoring.level} ({cookResult.nutrition_scoring.points} pts)
                         </div>
                     )}
                 </div>

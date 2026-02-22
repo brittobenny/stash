@@ -1,237 +1,210 @@
 import React, { useEffect, useState } from 'react';
-import { Activity, Flame, Leaf, AlertTriangle, Save } from 'lucide-react';
+import { Activity, Flame, Leaf, RefreshCw, Trophy, CalendarDays } from 'lucide-react';
+import { nutritionService } from '../services/api';
 import '../styles/global.css';
 
 const Nutrition = () => {
-    const [profile, setProfile] = useState({
-        calorie_goal: 2000,
-        protein_goal: 90,
-        carb_goal: 250,
-        fat_goal: 70,
-        diet_type: 'Balanced',
-        allergies: 'None',
-        notes: '',
-    });
-    const [progress, setProgress] = useState({
-        calories: 0,
-        protein: 0,
-        carbs: 0,
-        fat: 0,
-    });
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState('');
+    const [summary, setSummary] = useState(null);
+    const [daily, setDaily] = useState([]);
+    const [weekly, setWeekly] = useState([]);
+    const [rewards, setRewards] = useState([]);
+    const [cooked, setCooked] = useState([]);
+
+    const loadNutrition = async () => {
+        setLoading(true);
+        setError('');
+        try {
+            const [summaryRes, dailyRes, weeklyRes, rewardsRes, cookedRes] = await Promise.all([
+                nutritionService.getProfileSummary(),
+                nutritionService.getDailyScores({}),
+                nutritionService.getWeeklyScores({ weeks: 10 }),
+                nutritionService.getRewards({ limit: 20 }),
+                nutritionService.getCookedHistory({ limit: 20 }),
+            ]);
+            setSummary(summaryRes.data || null);
+            setDaily(dailyRes.data || []);
+            setWeekly(weeklyRes.data || []);
+            setRewards(rewardsRes.data || []);
+            setCooked(cookedRes.data || []);
+        } catch (err) {
+            setError('Failed to load nutrition insights.');
+        } finally {
+            setLoading(false);
+        }
+    };
 
     useEffect(() => {
-        const stored = JSON.parse(localStorage.getItem('nutrition_profile') || '{}');
-        if (stored.calorie_goal) {
-            setProfile((prev) => ({ ...prev, ...stored }));
-        }
-        const today = new Date().toISOString().slice(0, 10);
-        const prog = JSON.parse(localStorage.getItem('nutrition_progress') || '{}');
-        if (prog.date === today) {
-            setProgress({
-                calories: Number(prog.calories || 0),
-                protein: Number(prog.protein || 0),
-                carbs: Number(prog.carbs || 0),
-                fat: Number(prog.fat || 0),
-            });
-        }
+        loadNutrition();
     }, []);
 
-    const handleChange = (e) => {
-        const { name, value } = e.target;
-        setProfile((prev) => ({ ...prev, [name]: value }));
-    };
-
-    const handleSave = (e) => {
-        e.preventDefault();
-        localStorage.setItem('nutrition_profile', JSON.stringify(profile));
-        alert('Nutrition profile saved.');
-    };
+    const today = daily[0] || null;
 
     return (
         <div style={styles.page}>
             <header style={styles.header}>
                 <div>
-                    <h1 style={styles.title}>Nutrition Profile</h1>
-                    <p style={styles.subtitle}>Set goals and preferences to personalize your recipe recommendations.</p>
+                    <h1 style={styles.title}>Nutrition Scores</h1>
+                    <p style={styles.subtitle}>Daily and weekly balance, tracked automatically from cooked recipes.</p>
                 </div>
-                <div style={styles.badge}>
-                    <Activity size={16} /> Active Plan
-                </div>
+                <button style={styles.refreshBtn} onClick={loadNutrition} disabled={loading}>
+                    <RefreshCw size={16} className={loading ? 'spin' : ''} /> Refresh
+                </button>
             </header>
+
+            {error && <div style={styles.error}>{error}</div>}
 
             <section style={styles.cards}>
                 <div style={styles.card}>
-                    <div style={styles.cardIcon}><Flame size={20} /></div>
+                    <div style={styles.iconWrap}><Activity size={18} /></div>
                     <div>
-                        <p style={styles.cardLabel}>Daily Calories</p>
-                        <p style={styles.cardValue}>{profile.calorie_goal} kcal</p>
+                        <div style={styles.label}>Today Score</div>
+                        <div style={styles.value}>{summary?.today_score ?? 0}</div>
                     </div>
                 </div>
                 <div style={styles.card}>
-                    <div style={styles.cardIcon}><Leaf size={20} /></div>
+                    <div style={styles.iconWrap}><CalendarDays size={18} /></div>
                     <div>
-                        <p style={styles.cardLabel}>Protein Goal</p>
-                        <p style={styles.cardValue}>{profile.protein_goal} g</p>
+                        <div style={styles.label}>Weekly Avg</div>
+                        <div style={styles.value}>{Math.round(summary?.weekly_score ?? 0)}</div>
                     </div>
                 </div>
                 <div style={styles.card}>
-                    <div style={styles.cardIcon}><AlertTriangle size={20} /></div>
+                    <div style={styles.iconWrap}><Trophy size={18} /></div>
                     <div>
-                        <p style={styles.cardLabel}>Diet Type</p>
-                        <p style={styles.cardValue}>{profile.diet_type}</p>
+                        <div style={styles.label}>Level / Points</div>
+                        <div style={styles.value}>L{summary?.level ?? 1} · {summary?.points ?? 0}</div>
+                    </div>
+                </div>
+                <div style={styles.card}>
+                    <div style={styles.iconWrap}><Leaf size={18} /></div>
+                    <div>
+                        <div style={styles.label}>Streak / Badges</div>
+                        <div style={styles.value}>{summary?.current_streak ?? 0}d · {summary?.healthy_week_badges ?? 0}</div>
                     </div>
                 </div>
             </section>
 
-            <section style={styles.progressSection}>
-                <h2 style={styles.sectionTitle}>Today's Intake</h2>
-                <div style={styles.progressGrid}>
-                    <div style={styles.progressCard}>
-                        <p style={styles.progressLabel}>Calories</p>
-                        <p style={styles.progressValue}>{Math.round(progress.calories)} / {profile.calorie_goal} kcal</p>
+            <section style={styles.panel}>
+                <h2 style={styles.sectionTitle}>Today Totals</h2>
+                {today ? (
+                    <div style={styles.macroGrid}>
+                        <div style={styles.macroCard}><Flame size={16} /> {Math.round(today.total_calories || 0)} kcal</div>
+                        <div style={styles.macroCard}>Protein {Math.round(today.total_protein || 0)} g</div>
+                        <div style={styles.macroCard}>Carbs {Math.round(today.total_carbs || 0)} g</div>
+                        <div style={styles.macroCard}>Fats {Math.round(today.total_fats || 0)} g</div>
+                        <div style={styles.macroCard}>Vegetables {Number(today.total_vegetable_servings || 0).toFixed(1)} servings</div>
                     </div>
-                    <div style={styles.progressCard}>
-                        <p style={styles.progressLabel}>Protein</p>
-                        <p style={styles.progressValue}>{Math.round(progress.protein)} / {profile.protein_goal} g</p>
-                    </div>
-                    <div style={styles.progressCard}>
-                        <p style={styles.progressLabel}>Carbs</p>
-                        <p style={styles.progressValue}>{Math.round(progress.carbs)} / {profile.carb_goal} g</p>
-                    </div>
-                    <div style={styles.progressCard}>
-                        <p style={styles.progressLabel}>Fat</p>
-                        <p style={styles.progressValue}>{Math.round(progress.fat)} / {profile.fat_goal} g</p>
-                    </div>
+                ) : (
+                    <div style={styles.empty}>No cooked recipes logged today.</div>
+                )}
+            </section>
+
+            <section style={styles.grid2}>
+                <div style={styles.panel}>
+                    <h2 style={styles.sectionTitle}>Daily History</h2>
+                    {daily.length === 0 ? (
+                        <div style={styles.empty}>No daily history yet.</div>
+                    ) : (
+                        <div style={styles.list}>
+                            {daily.map((d) => (
+                                <div key={d.date} style={styles.row}>
+                                    <span>{d.date}</span>
+                                    <span style={styles.rowMeta}>Score {d.score}</span>
+                                    <span style={d.balanced ? styles.good : styles.warn}>{d.balanced ? 'Balanced' : 'Needs work'}</span>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+
+                <div style={styles.panel}>
+                    <h2 style={styles.sectionTitle}>Weekly History</h2>
+                    {weekly.length === 0 ? (
+                        <div style={styles.empty}>No weekly history yet.</div>
+                    ) : (
+                        <div style={styles.list}>
+                            {weekly.map((w) => (
+                                <div key={w.week_start} style={styles.row}>
+                                    <span>{w.week_start} - {w.week_end}</span>
+                                    <span style={styles.rowMeta}>Avg {Math.round(w.average_score || 0)}</span>
+                                    <span style={styles.rowMeta}>{w.days_tracked} days</span>
+                                </div>
+                            ))}
+                        </div>
+                    )}
                 </div>
             </section>
 
-            <section style={styles.formSection}>
-                <h2 style={styles.sectionTitle}>Update Preferences</h2>
-                <form style={styles.form} onSubmit={handleSave}>
-                    <div style={styles.formGrid}>
-                        <div style={styles.formGroup}>
-                            <label>Daily Calorie Goal</label>
-                            <input
-                                type="number"
-                                name="calorie_goal"
-                                value={profile.calorie_goal}
-                                onChange={handleChange}
-                                style={styles.input}
-                                min="800"
-                                max="5000"
-                            />
+            <section style={styles.grid2}>
+                <div style={styles.panel}>
+                    <h2 style={styles.sectionTitle}>Rewards</h2>
+                    {rewards.length === 0 ? (
+                        <div style={styles.empty}>No rewards yet.</div>
+                    ) : (
+                        <div style={styles.list}>
+                            {rewards.map((r) => (
+                                <div key={r.id} style={styles.rewardRow}>
+                                    <div>
+                                        <div style={styles.rewardTitle}>{r.title}</div>
+                                        <div style={styles.rewardMeta}>{new Date(r.awarded_at).toLocaleString()}</div>
+                                    </div>
+                                    <div style={styles.rewardPoints}>+{r.points}</div>
+                                </div>
+                            ))}
                         </div>
-                        <div style={styles.formGroup}>
-                            <label>Protein Goal (g)</label>
-                            <input
-                                type="number"
-                                name="protein_goal"
-                                value={profile.protein_goal}
-                                onChange={handleChange}
-                                style={styles.input}
-                                min="20"
-                                max="300"
-                            />
-                        </div>
-                        <div style={styles.formGroup}>
-                            <label>Carb Goal (g)</label>
-                            <input
-                                type="number"
-                                name="carb_goal"
-                                value={profile.carb_goal}
-                                onChange={handleChange}
-                                style={styles.input}
-                                min="50"
-                                max="600"
-                            />
-                        </div>
-                        <div style={styles.formGroup}>
-                            <label>Fat Goal (g)</label>
-                            <input
-                                type="number"
-                                name="fat_goal"
-                                value={profile.fat_goal}
-                                onChange={handleChange}
-                                style={styles.input}
-                                min="20"
-                                max="200"
-                            />
-                        </div>
-                        <div style={styles.formGroup}>
-                            <label>Diet Type</label>
-                            <select
-                                name="diet_type"
-                                value={profile.diet_type}
-                                onChange={handleChange}
-                                style={styles.input}
-                            >
-                                <option>Balanced</option>
-                                <option>Vegetarian</option>
-                                <option>Vegan</option>
-                                <option>High Protein</option>
-                                <option>Low Carb</option>
-                            </select>
-                        </div>
-                        <div style={styles.formGroup}>
-                            <label>Allergies</label>
-                            <input
-                                type="text"
-                                name="allergies"
-                                value={profile.allergies}
-                                onChange={handleChange}
-                                style={styles.input}
-                                placeholder="Peanuts, gluten..."
-                            />
-                        </div>
-                    </div>
+                    )}
+                </div>
 
-                    <div style={styles.formGroup}>
-                        <label>Notes</label>
-                        <textarea
-                            name="notes"
-                            value={profile.notes}
-                            onChange={handleChange}
-                            style={styles.textarea}
-                            placeholder="Any extra preferences or restrictions..."
-                        />
-                    </div>
-
-                    <button type="submit" className="btn btn-primary" style={styles.saveBtn}>
-                        <Save size={18} /> Save Profile
-                    </button>
-                </form>
+                <div style={styles.panel}>
+                    <h2 style={styles.sectionTitle}>Cooked Recipes</h2>
+                    {cooked.length === 0 ? (
+                        <div style={styles.empty}>No cooked recipes logged yet.</div>
+                    ) : (
+                        <div style={styles.list}>
+                            {cooked.map((c) => (
+                                <div key={c.id} style={styles.row}>
+                                    <span>{c.recipe_name}</span>
+                                    <span style={styles.rowMeta}>{Math.round(c.calories || 0)} kcal</span>
+                                    <span style={styles.rowMeta}>{new Date(c.cooked_at).toLocaleDateString()}</span>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
             </section>
         </div>
     );
 };
 
 const styles = {
-    page: { maxWidth: '1100px', margin: '0 auto', padding: '2rem' },
-    header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem', flexWrap: 'wrap', gap: '1rem' },
-    title: { fontSize: '2.4rem', color: 'var(--color-text)', marginBottom: '0.5rem' },
-    subtitle: { color: 'var(--color-text-light)', maxWidth: '640px' },
-    badge: { display: 'inline-flex', alignItems: 'center', gap: '8px', background: 'rgba(225,29,46,0.12)', color: 'var(--color-accent)', padding: '8px 14px', borderRadius: '999px', fontWeight: '600', border: '1px solid rgba(225,29,46,0.2)' },
-
-    cards: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1rem', marginBottom: '2rem' },
-    card: { background: 'var(--color-surface)', borderRadius: '16px', padding: '1.2rem', boxShadow: 'var(--shadow-sm)', display: 'flex', gap: '1rem', alignItems: 'center', border: '1px solid var(--color-border)' },
-    cardIcon: { width: '44px', height: '44px', borderRadius: '12px', background: 'rgba(225,29,46,0.12)', color: 'var(--color-accent)', display: 'flex', alignItems: 'center', justifyContent: 'center' },
-    cardLabel: { color: 'var(--color-text-light)', fontSize: '0.85rem' },
-    cardValue: { fontSize: '1.2rem', fontWeight: '700', color: 'var(--color-text)' },
-
-    progressSection: { marginBottom: '2rem' },
-    progressGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' },
-    progressCard: { background: 'var(--color-surface)', borderRadius: '14px', padding: '1rem', border: '1px solid var(--color-border)' },
-    progressLabel: { color: 'var(--color-text-light)', fontSize: '0.85rem' },
-    progressValue: { color: 'var(--color-text)', fontSize: '1.1rem', fontWeight: '700' },
-
-    formSection: { background: 'var(--color-surface)', borderRadius: '20px', padding: '2rem', boxShadow: 'var(--shadow-sm)', border: '1px solid var(--color-border)' },
-    sectionTitle: { fontSize: '1.5rem', marginBottom: '1.5rem' },
-    form: { display: 'flex', flexDirection: 'column', gap: '1.5rem' },
-    formGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1.2rem' },
-    formGroup: { display: 'flex', flexDirection: 'column', gap: '0.5rem' },
-    input: { padding: '12px', borderRadius: '10px', border: '1px solid var(--color-border)', background: 'var(--color-surface-2)', color: 'var(--color-text)', fontSize: '1rem' },
-    textarea: { padding: '12px', borderRadius: '10px', border: '1px solid var(--color-border)', background: 'var(--color-surface-2)', color: 'var(--color-text)', minHeight: '100px', fontSize: '1rem' },
-    saveBtn: { alignSelf: 'flex-start', padding: '12px 20px' },
+    page: { maxWidth: '1150px', margin: '0 auto', padding: '2rem' },
+    header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', flexWrap: 'wrap', marginBottom: '1.5rem' },
+    title: { fontSize: '2.2rem', color: 'var(--color-text)' },
+    subtitle: { color: 'var(--color-text-light)' },
+    refreshBtn: { background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '999px', padding: '10px 14px', display: 'inline-flex', gap: '8px', alignItems: 'center', cursor: 'pointer' },
+    error: { background: 'rgba(239,68,68,0.12)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.2)', borderRadius: '10px', padding: '10px 12px', marginBottom: '1rem' },
+    cards: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem', marginBottom: '1.2rem' },
+    card: { background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '14px', padding: '12px', display: 'flex', alignItems: 'center', gap: '10px' },
+    iconWrap: { width: '34px', height: '34px', borderRadius: '10px', background: 'rgba(225,29,46,0.12)', color: 'var(--color-accent)', display: 'flex', alignItems: 'center', justifyContent: 'center' },
+    label: { color: 'var(--color-text-light)', fontSize: '0.82rem' },
+    value: { fontWeight: '700', fontSize: '1.1rem' },
+    panel: { background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '16px', padding: '1rem', marginBottom: '1rem' },
+    sectionTitle: { marginBottom: '0.7rem' },
+    macroGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '0.6rem' },
+    macroCard: { background: 'var(--color-surface-2)', border: '1px solid var(--color-border)', borderRadius: '999px', padding: '8px 12px', display: 'inline-flex', gap: '6px', alignItems: 'center' },
+    grid2: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1rem' },
+    list: { display: 'flex', flexDirection: 'column', gap: '0.5rem' },
+    row: { display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', alignItems: 'center', gap: '0.5rem', background: 'var(--color-surface-2)', border: '1px solid var(--color-border)', borderRadius: '10px', padding: '8px 10px' },
+    rowMeta: { color: 'var(--color-text-light)', fontSize: '0.86rem', textAlign: 'right' },
+    good: { justifySelf: 'end', color: '#177245', fontWeight: '700', fontSize: '0.85rem' },
+    warn: { justifySelf: 'end', color: '#b45309', fontWeight: '700', fontSize: '0.85rem' },
+    rewardRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--color-surface-2)', border: '1px solid var(--color-border)', borderRadius: '10px', padding: '8px 10px' },
+    rewardTitle: { fontWeight: '700' },
+    rewardMeta: { color: 'var(--color-text-light)', fontSize: '0.8rem' },
+    rewardPoints: { color: 'var(--color-primary)', fontWeight: '700' },
+    empty: { color: 'var(--color-text-light)', padding: '8px 0' },
 };
 
 export default Nutrition;

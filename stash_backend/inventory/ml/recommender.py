@@ -89,7 +89,18 @@ class MealRecommender:
         if not self.loaded:
             self.load_data()
 
-        pantry_set = set(i.lower() for i in pantry_items)
+        pantry_set = set()
+        for item in pantry_items:
+            raw = str(item or "").strip().lower()
+            if not raw:
+                continue
+            pantry_set.add(raw)
+            cleaned = self.clean_ingredient(raw)
+            if cleaned:
+                pantry_set.add(cleaned)
+            for token in raw.split():
+                if token:
+                    pantry_set.add(token)
 
         if not pantry_set:
             return []
@@ -97,10 +108,12 @@ class MealRecommender:
         results = []
 
         # Detect hero items user owns
-        user_heroes = [
-            i for i in pantry_set
-            if any(h in i for h in self.hero_keywords)
-        ]
+        user_heroes = {
+            hero
+            for value in pantry_set
+            for hero in self.hero_keywords
+            if hero in value
+        }
 
         for _, row in self.recipes.iterrows():
 
@@ -113,9 +126,8 @@ class MealRecommender:
                 continue
 
             # Enforce hero rule
-            if user_heroes:
-                if not any(hero in recipe_ing for hero in user_heroes):
-                    continue
+            if user_heroes and not any(hero in recipe_ing for hero in user_heroes):
+                continue
 
             used = len(intersection)
             missing = len(recipe_ing - pantry_set)

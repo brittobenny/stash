@@ -27,8 +27,11 @@ api.interceptors.response.use(
             // Token expired or invalid
             localStorage.removeItem('token');
             localStorage.removeItem('role');
-            // distinct from window.location.href to avoid full reload loops if not careful, 
-            // but for now simple redirect is okay or let comp handle it
+            localStorage.removeItem('user');
+            const path = window.location.pathname;
+            if (path !== '/login' && path !== '/register') {
+                window.location.assign('/login');
+            }
         }
         return Promise.reject(error);
     }
@@ -74,6 +77,15 @@ export const pantryService = {
 
 export const inventoryService = {
     listUsage: () => api.get('/inventory/'),
+};
+
+export const nutritionService = {
+    getProfileSummary: () => api.get('/nutrition/profile/'),
+    getDailyScores: (params = {}) => api.get('/nutrition/daily/', { params }),
+    getWeeklyScores: (params = {}) => api.get('/nutrition/weekly/', { params }),
+    getRewards: (params = {}) => api.get('/nutrition/rewards/', { params }),
+    getCookedHistory: (params = {}) => api.get('/nutrition/cooked/', { params }),
+    recalculate: (date = null) => api.post('/nutrition/recalculate/', date ? { date } : {}),
 };
 
 export const recipeService = {

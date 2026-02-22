@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { User, Mail, Phone, Shield, PackageCheck, Flame, Activity, Package, Bell } from 'lucide-react';
-import { pantryService, shopService, inventoryService, accountService } from '../services/api';
+import { pantryService, shopService, inventoryService, accountService, nutritionService } from '../services/api';
 import '../styles/global.css';
 
 const Profile = () => {
@@ -15,6 +15,12 @@ const Profile = () => {
         ordersCount: 0,
         cookedCount: 0,
         caloriesToday: 0,
+        todayScore: 0,
+        weeklyScore: 0,
+        points: 0,
+        level: 1,
+        streak: 0,
+        lastCookedText: 'No activity',
     });
     const [usage, setUsage] = useState([]);
     const [nutritionProfile, setNutritionProfile] = useState({
@@ -85,46 +91,50 @@ const Profile = () => {
     }, []);
 
     useEffect(() => {
-        const storedProfile = JSON.parse(localStorage.getItem('nutrition_profile') || '{}');
-        if (storedProfile.calorie_goal) {
-            setNutritionProfile((prev) => ({ ...prev, ...storedProfile }));
-        }
-        const today = new Date().toISOString().slice(0, 10);
-        const prog = JSON.parse(localStorage.getItem('nutrition_progress') || '{}');
-        if (prog.date === today) {
-            setNutritionProgress({
-                calories: Number(prog.calories || 0),
-                protein: Number(prog.protein || 0),
-                carbs: Number(prog.carbs || 0),
-                fat: Number(prog.fat || 0),
-            });
-        }
-    }, []);
-
-    useEffect(() => {
         const loadMetrics = async () => {
             try {
-                const [pantryRes, ordersRes, usageRes] = await Promise.all([
+                const today = new Date().toISOString().slice(0, 10);
+                const [pantryRes, ordersRes, usageRes, nutritionSummaryRes, todayScoreRes, cookedRes] = await Promise.all([
                     pantryService.getItems(),
                     shopService.listOrders(),
                     inventoryService.listUsage(),
+                    nutritionService.getProfileSummary(),
+                    nutritionService.getDailyScores({ start: today, end: today }),
+                    nutritionService.getCookedHistory({ limit: 200 }),
                 ]);
-                const cookedCount = parseInt(localStorage.getItem('cooked_count') || '0', 10);
-                const progress = JSON.parse(localStorage.getItem('nutrition_progress') || '{}');
+                const summary = nutritionSummaryRes.data || {};
+                const todayEntry = (todayScoreRes.data || [])[0] || null;
+                const cookedEntries = cookedRes.data || [];
+                const lastCookedAt = cookedEntries.length > 0 ? new Date(cookedEntries[0].cooked_at) : null;
                 setMetrics({
                     pantryCount: pantryRes.data?.length || 0,
                     ordersCount: ordersRes.data?.length || 0,
-                    cookedCount,
-                    caloriesToday: Math.round(Number(progress.calories || 0)),
+                    cookedCount: cookedEntries.length,
+                    caloriesToday: Math.round(Number(todayEntry?.total_calories || 0)),
+                    todayScore: Number(summary.today_score || 0),
+                    weeklyScore: Number(summary.weekly_score || 0),
+                    points: Number(summary.points || 0),
+                    level: Number(summary.level || 1),
+                    streak: Number(summary.current_streak || 0),
+                    lastCookedText: lastCookedAt ? lastCookedAt.toLocaleDateString() : 'No activity',
                 });
+                if (todayEntry) {
+                    setNutritionProgress({
+                        calories: Number(todayEntry.total_calories || 0),
+                        protein: Number(todayEntry.total_protein || 0),
+                        carbs: Number(todayEntry.total_carbs || 0),
+                        fat: Number(todayEntry.total_fats || 0),
+                    });
+                } else {
+                    setNutritionProgress({ calories: 0, protein: 0, carbs: 0, fat: 0 });
+                }
                 const usageList = (usageRes.data || [])
                     .filter((u) => Number(u.quantity || 0) > 0)
                     .sort((a, b) => Number(b.quantity || 0) - Number(a.quantity || 0))
                     .slice(0, 6);
                 setUsage(usageList);
             } catch (err) {
-                const cookedCount = parseInt(localStorage.getItem('cooked_count') || '0', 10);
-                setMetrics((prev) => ({ ...prev, cookedCount }));
+                setMetrics((prev) => ({ ...prev }));
             }
         };
         loadMetrics();
@@ -288,6 +298,34 @@ const Profile = () => {
                                 <p style={styles.metricValue}>{metrics.caloriesToday}</p>
                             </div>
                         </div>
+                        <div style={styles.metricCard}>
+                            <Activity size={18} />
+                            <div>
+                                <p style={styles.metricLabel}>Today Score</p>
+                                <p style={styles.metricValue}>{Math.round(metrics.todayScore)}</p>
+                            </div>
+                        </div>
+                        <div style={styles.metricCard}>
+                            <Activity size={18} />
+                            <div>
+                                <p style={styles.metricLabel}>Weekly Avg</p>
+                                <p style={styles.metricValue}>{Math.round(metrics.weeklyScore)}</p>
+                            </div>
+                        </div>
+                        <div style={styles.metricCard}>
+                            <Activity size={18} />
+                            <div>
+                                <p style={styles.metricLabel}>Level / Points</p>
+                                <p style={styles.metricValue}>L{metrics.level} · {metrics.points}</p>
+                            </div>
+                        </div>
+                        <div style={styles.metricCard}>
+                            <Activity size={18} />
+                            <div>
+                                <p style={styles.metricLabel}>Streak</p>
+                                <p style={styles.metricValue}>{metrics.streak} days</p>
+                            </div>
+                        </div>
                     </div>
 
                     <div style={styles.usageCard}>
@@ -298,7 +336,7 @@ const Profile = () => {
                         </div>
                         <div style={styles.usageRow}>
                             <span>Last cooked</span>
-                            <span>{metrics.cookedCount > 0 ? 'Today' : 'No activity'}</span>
+                            <span>{metrics.lastCookedText}</span>
                         </div>
                         <div style={styles.usageRow}>
                             <span>Orders in progress</span>

@@ -1,11 +1,13 @@
+import csv
+from pathlib import Path
+
 from django.db import transaction, models
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from rest_framework import status
-from .models import Ingredient, PantryItem
+from .models import Ingredient, PantryItem, InventoryItem
 from .serializers import PantryItemSerializer
-from .models import InventoryItem, Ingredient
 from .serializers import InventoryItemSerializer
 from .ml.recommender import recommender
 from nutrition.calculator import calculate_nutrition
@@ -13,12 +15,78 @@ from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 from django.http import HttpResponse, HttpResponseRedirect, FileResponse
 from django.conf import settings
-from pathlib import Path
+
+
+def _normalize_ingredient_category(raw_category: str) -> str:
+    value = (raw_category or "").strip().lower()
+    mapping = {
+        "vegetables": "Vegetable",
+        "greens": "Vegetable",
+        "mushrooms": "Vegetable",
+        "vegetable": "Vegetable",
+        "fruit": "Fruit",
+        "fruits": "Fruit",
+        "meat": "Meat",
+        "seafood": "Meat",
+        "dairy": "Dairy",
+        "grain": "Grain",
+        "grains": "Grain",
+        "spice": "Spice",
+        "spices": "Spice",
+        "oil": "Oil",
+        "oils and sauces": "Oil",
+        "other": "Other",
+    }
+    return mapping.get(value, "Other")
+
+
+def _seed_ingredients_from_csv_if_empty() -> None:
+    """
+    Load ingredient master data lazily when DB is empty.
+    This keeps first-run environments working without a manual management command.
+    """
+    if Ingredient.objects.exists():
+        return
+
+    csv_path = Path(settings.BASE_DIR) / "data" / "ingredients_master.csv"
+    if not csv_path.exists():
+        return
+
+    rows = []
+    with open(csv_path, newline="", encoding="utf-8") as file:
+        reader = csv.DictReader(file)
+        for row in reader:
+            name = (row.get("name") or "").strip()
+            if not name:
+                continue
+
+            category = _normalize_ingredient_category(row.get("category"))
+            default_unit = (row.get("default_unit") or "grams").strip() or "grams"
+            image_url = (row.get("image_url") or "").strip() or None
+
+            rows.append(
+                Ingredient(
+                    name=name,
+                    category=category,
+                    default_unit=default_unit,
+                    image_url=image_url,
+                )
+            )
+
+    if not rows:
+        return
+
+    with transaction.atomic():
+        # Re-check inside transaction to avoid duplicate work under concurrency.
+        if Ingredient.objects.exists():
+            return
+        Ingredient.objects.bulk_create(rows, ignore_conflicts=True)
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def list_ingredients(request):
-    ingredients = Ingredient.objects.all().values('id', 'name', 'category', 'default_unit', 'image_url')
+    _seed_ingredients_from_csv_if_empty()
+    ingredients = Ingredient.objects.order_by("name").values('id', 'name', 'category', 'default_unit', 'image_url')
     return Response(list(ingredients))
 
 @api_view(["POST"])
@@ -456,6 +524,22 @@ def cook_recipe(request):
 
         PantryItem.objects.filter(user=request.user, quantity__lte=0.0001).delete()
 
+    nutrition_totals = calculate_nutrition(parsed_ingredients)
+    nutrition_scoring = None
+    try:
+        from nutrition.services import record_cooked_recipe
+
+        nutrition_scoring = record_cooked_recipe(
+            user=request.user,
+            recipe_id=recipe["id"],
+            recipe_name=recipe["name"],
+            nutrition_totals=nutrition_totals,
+            parsed_ingredients=parsed_ingredients,
+        )
+    except Exception:
+        # Do not fail cooking flow if nutrition scoring fails unexpectedly.
+        nutrition_scoring = None
+
     return Response(
         {
             "status": "partial" if insufficient else "success",
@@ -463,7 +547,8 @@ def cook_recipe(request):
             "cooked_recipe": {"id": recipe["id"], "name": recipe["name"]},
             "deducted": deducted,
             "missing": insufficient,
-            "nutrition": calculate_nutrition(parsed_ingredients)
+            "nutrition": nutrition_totals,
+            "nutrition_scoring": nutrition_scoring,
         },
         status=status.HTTP_200_OK
     )

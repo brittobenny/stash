@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/Layout';
+import RequireAuth from './components/RequireAuth';
 import Home from './pages/Home';
 import ShopOwnerDashboard from './pages/ShopOwnerDashboard';
 import ShopOwnerProducts from './pages/ShopOwnerProducts';
@@ -29,26 +30,30 @@ function App() {
 
         {/* Protected Routes (Wrapped in Layout) */}
         <Route element={<Layout />}>
-          {/* Default customer route or dashboard if kept */}
-          <Route path="customer" element={<Navigate to="/customer/inventory" replace />} />
+          <Route element={<RequireAuth allowedRoles={['customer']} />}>
+            <Route path="customer" element={<Navigate to="/customer/inventory" replace />} />
+            <Route path="/customer/inventory" element={<Pantry />} />
+            <Route path="/customer/cook" element={<Cook />} />
+            <Route path="/customer/nutrition" element={<Nutrition />} />
+            <Route path="/customer/recipes/:id" element={<RecipeDetail />} />
+            <Route path="/customer/shop" element={<Shop />} />
+            <Route path="/customer/cart" element={<Cart />} />
+            <Route path="/customer/account" element={<Profile />} />
+            <Route path="/customer/orders" element={<Orders />} />
+            <Route path="/customer/payment/:id" element={<Payment />} />
+          </Route>
 
-          {/* New Customer Routes */}
-          <Route path="/customer/inventory" element={<Pantry />} />
-          <Route path="/customer/cook" element={<Cook />} />
-          <Route path="/customer/nutrition" element={<Nutrition />} />
-          <Route path="/customer/recipes/:id" element={<RecipeDetail />} />
-          <Route path="/customer/shop" element={<Shop />} />
-          <Route path="/customer/cart" element={<Cart />} />
-          <Route path="/customer/account" element={<Profile />} />
-          <Route path="/customer/orders" element={<Orders />} />
-          <Route path="/customer/payment/:id" element={<Payment />} />
+          <Route element={<RequireAuth allowedRoles={['shopowner']} />}>
+            <Route path="shop-owner" element={<Navigate to="/shop-owner/dashboard" replace />} />
+            <Route path="shop-owner/dashboard" element={<ShopOwnerDashboard />} />
+            <Route path="shop-owner/products" element={<ShopOwnerProducts />} />
+            <Route path="shop-owner/orders" element={<ShopOwnerOrders />} />
+            <Route path="shop-owner/feedback" element={<ShopOwnerFeedback />} />
+          </Route>
 
-          <Route path="shop-owner" element={<Navigate to="/shop-owner/dashboard" replace />} />
-          <Route path="shop-owner/dashboard" element={<ShopOwnerDashboard />} />
-          <Route path="shop-owner/products" element={<ShopOwnerProducts />} />
-          <Route path="shop-owner/orders" element={<ShopOwnerOrders />} />
-          <Route path="shop-owner/feedback" element={<ShopOwnerFeedback />} />
-          <Route path="admin" element={<AdminDashboard />} />
+          <Route element={<RequireAuth allowedRoles={['admin']} />}>
+            <Route path="admin" element={<AdminDashboard />} />
+          </Route>
         </Route>
       </Routes>
     </BrowserRouter>

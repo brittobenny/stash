@@ -47,6 +47,16 @@ const Cook = () => {
         [pantryItems]
     );
 
+    const emptyMessage = useMemo(() => {
+        if (availableNames.length === 0) {
+            return 'Add items to your pantry to see recommendations.';
+        }
+        if (selectedIngredients.length === 0) {
+            return 'Select at least one ingredient and click "Get AI Recipes".';
+        }
+        return 'No matching recipes found for the selected ingredients. Try Select All or different ingredients.';
+    }, [availableNames.length, selectedIngredients.length]);
+
     const toggleIngredient = (name) => {
         setSelectedIngredients((prev) =>
             prev.includes(name) ? prev.filter((n) => n !== name) : [...prev, name]
@@ -128,7 +138,7 @@ const Cook = () => {
                 </div>
             ) : recommendations.length === 0 ? (
                 <div style={styles.emptyState}>
-                    Add items to your pantry to see recommendations.
+                    {emptyMessage}
                 </div>
             ) : (
                 <div style={styles.recipeGrid}>
