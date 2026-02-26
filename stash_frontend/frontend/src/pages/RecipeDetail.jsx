@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, ChefHat, Flame, Leaf, AlertTriangle, Save, Search } from 'lucide-react';
 import { recipeService, shopService } from '../services/api';
 import '../styles/global.css';
 
 const RecipeDetail = () => {
     const navigate = useNavigate();
+    const location = useLocation();
     const { id } = useParams();
     const [recipe, setRecipe] = useState(null);
     const [loading, setLoading] = useState(true);
@@ -19,6 +20,8 @@ const RecipeDetail = () => {
     const [imageSrc, setImageSrc] = useState('');
     const [addingMissing, setAddingMissing] = useState(false);
     const [addMissingMsg, setAddMissingMsg] = useState('');
+    const [scale, setScale] = useState(1);
+    const backTo = location.state?.from || '/customer/cook';
 
     const getRecipeImage = (url) => {
         const localFallback = '/api/category-image/vegetable/';
@@ -27,19 +30,24 @@ const RecipeDetail = () => {
     };
 
     useEffect(() => {
-        const fetchDetail = async () => {
+        const fetchDetail = async (scaleValue) => {
             setLoading(true);
             setError('');
             try {
-                const res = await recipeService.getRecipeDetail(id);
+                const res = await recipeService.getRecipeDetail(id, scaleValue);
                 setRecipe(res.data);
+                if (res.data?.scale && res.data.scale !== scaleValue) {
+                    setScale(Number(res.data.scale));
+                }
                 setImageSrc(getRecipeImage(res.data?.image_url || ''));
-                const baseList = (res.data?.ingredient_status || []).map((item) => ({
-                    name: item.name,
-                    grams: Number(item.needed_g || 0),
-                    have_g: Number(item.have_g || 0),
-                    display: item.display,
-                }));
+                const baseList = (res.data?.ingredient_status || [])
+                    .filter((item) => (item?.name || '').trim())
+                    .map((item) => ({
+                        name: item.name,
+                        grams: Number(item.needed_g || 0),
+                        have_g: Number(item.have_g || 0),
+                        display: item.display,
+                    }));
                 setCookList(baseList);
             } catch (err) {
                 setError('Failed to load recipe details.');
@@ -47,8 +55,11 @@ const RecipeDetail = () => {
                 setLoading(false);
             }
         };
-        fetchDetail();
-    }, [id]);
+        const timer = setTimeout(() => {
+            fetchDetail(scale);
+        }, 200);
+        return () => clearTimeout(timer);
+    }, [id, scale]);
 
     const nutrition = recipe?.nutrition || {};
 
@@ -75,7 +86,7 @@ const RecipeDetail = () => {
             const ingredients = cookList
                 .filter((i) => i.grams && i.grams > 0)
                 .map((i) => ({ name: i.name, grams: i.grams }));
-            const res = await recipeService.cookRecipe(recipe.id, allowPartial, ingredients);
+            const res = await recipeService.cookRecipe(recipe.id, allowPartial, ingredients, scale);
             setCookResult(res.data);
             if (res.data?.status === 'success' || res.data?.status === 'partial') {
                 localStorage.setItem('pantry_refresh', Date.now().toString());
@@ -95,7 +106,7 @@ const RecipeDetail = () => {
     const handleDownloadPdf = () => {
         if (!recipe) return;
         const steps = (recipe.steps || []).filter((s) => s.trim());
-        const ingredients = recipe.ingredient_status || [];
+        const ingredients = (recipe.ingredient_status || []).filter((item) => (item?.name || '').trim());
         const doodleSvg = `<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160' viewBox='0 0 160 160'>
   <g stroke='#f3b9b9' stroke-width='2' fill='none' stroke-linecap='round' stroke-linejoin='round' opacity='0.7'>
     <circle cx='26' cy='30' r='6'/>
@@ -231,8 +242,8 @@ const RecipeDetail = () => {
         return (
             <div style={styles.errorState}>
                 <p>{error || 'Recipe not found.'}</p>
-                <button style={styles.backBtn} onClick={() => navigate('/customer/inventory')}>
-                    <ArrowLeft size={16} /> Back to Inventory
+                <button style={styles.backBtn} onClick={() => navigate(backTo)}>
+                    <ArrowLeft size={16} /> Back to Cook
                 </button>
             </div>
         );
@@ -240,8 +251,8 @@ const RecipeDetail = () => {
 
     return (
         <div style={styles.page}>
-            <button style={styles.backBtn} onClick={() => navigate('/customer/inventory')}>
-                <ArrowLeft size={16} /> Back to Inventory
+            <button style={styles.backBtn} onClick={() => navigate(backTo)}>
+                <ArrowLeft size={16} /> Back to Cook
             </button>
 
             <div style={styles.header}>
@@ -250,8 +261,24 @@ const RecipeDetail = () => {
                     <p style={styles.meta}>
                         {recipe.cuisine || 'General'} | {recipe.difficulty} | {recipe.minutes} mins
                     </p>
+                    {recipe.seasonal_hint && (
+                        <span style={styles.seasonalBadge}>{recipe.seasonal_hint}</span>
+                    )}
                 </div>
                 <div style={styles.headerActions}>
+                    <div style={styles.scaleControl}>
+                        <span style={styles.scaleLabel}>Portion</span>
+                        <input
+                            type="range"
+                            min="0.5"
+                            max="3"
+                            step="0.25"
+                            value={scale}
+                            onChange={(e) => setScale(Number(e.target.value))}
+                            style={styles.scaleRange}
+                        />
+                        <span style={styles.scaleValue}>{scale.toFixed(2)}x</span>
+                    </div>
                     <button style={styles.secondaryBtn} onClick={handleDownloadPdf}>
                         Download PDF
                     </button>
@@ -304,28 +331,62 @@ const RecipeDetail = () => {
                         <span>Status</span>
                     </div>
                     {(recipe.ingredient_status || [])
-                        .filter((item) => item.name.toLowerCase().includes(ingredientFilter.toLowerCase()))
+                        .filter((item) => {
+                            const name = (item?.name || '').trim();
+                            return name && name.toLowerCase().includes(ingredientFilter.toLowerCase());
+                        })
                         .map((item, idx) => (
                             <div key={idx} style={styles.ingredientRow}>
                                 <span style={styles.ingredientName}>{item.name}</span>
                                 <span style={styles.ingredientValue}>{item.display || `${item.needed_g} g`}</span>
                                 <span style={styles.ingredientValue}>{item.have_g}</span>
-                                <span style={item.status === 'have' ? styles.haveBadge : styles.missingBadge}>
-                                    {item.status === 'have' ? 'Available' : 'Missing'}
-                                </span>
+                                {item.status === 'have' && <span style={styles.haveBadge}>Available</span>}
+                                {item.status === 'partial' && <span style={styles.partialBadge}>Low stock</span>}
+                                {item.status === 'missing' && <span style={styles.missingBadge}>Missing</span>}
                             </div>
                         ))}
                 </div>
             </section>
 
+            {recipe.insufficient_ingredients?.length > 0 && (
+                <section style={styles.section} className="fade-up">
+                    <h2 style={styles.sectionTitle}>Low Stock Ingredients</h2>
+                    <div style={styles.availableList}>
+                        {recipe.insufficient_ingredients.map((item, idx) => (
+                            <span key={idx} style={styles.partialTag}>{item}</span>
+                        ))}
+                    </div>
+                </section>
+            )}
+
             {recipe.missing_ingredients?.length > 0 && (
                 <section style={styles.section} className="fade-up">
                     <h2 style={styles.sectionTitle}><AlertTriangle size={18} /> Missing Ingredients</h2>
                     <div style={styles.missingList}>
-                        {recipe.missing_ingredients.map((item, idx) => (
+                        {(recipe.missing_ingredients || []).filter(Boolean).map((item, idx) => (
                             <span key={idx} style={styles.missingTag}>{item}</span>
                         ))}
                     </div>
+                    {recipe.substitution_suggestions?.length > 0 && (
+                        <div style={styles.substitutionPanel}>
+                            <div style={styles.substitutionTitle}>Substitution suggestions</div>
+                            {recipe.substitution_suggestions.map((suggestion, idx) => (
+                                <div key={`${suggestion.ingredient}-${idx}`} style={styles.substitutionRow}>
+                                    <div style={styles.substitutionIngredient}>{suggestion.ingredient}</div>
+                                    <div style={styles.substitutionOptions}>
+                                        {suggestion.options.map((opt, optIdx) => (
+                                            <span
+                                                key={`${suggestion.ingredient}-${optIdx}`}
+                                                style={opt.pantry_has ? styles.subOptionActive : styles.subOption}
+                                            >
+                                                {opt.name}{opt.note ? ` (${opt.note})` : ''}
+                                            </span>
+                                        ))}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
                     <button style={styles.missingBtn} onClick={handleAddMissingToCart} disabled={addingMissing}>
                         {addingMissing ? 'Adding...' : 'Add Missing to Cart'}
                     </button>
@@ -337,7 +398,7 @@ const RecipeDetail = () => {
                 <section style={styles.section} className="fade-up">
                     <h2 style={styles.sectionTitle}>Ingredients You Have</h2>
                     <div style={styles.availableList}>
-                        {recipe.available_ingredients.map((item, idx) => (
+                        {(recipe.available_ingredients || []).filter(Boolean).map((item, idx) => (
                             <span key={idx} style={styles.haveTag}>{item}</span>
                         ))}
                     </div>
@@ -443,8 +504,13 @@ const styles = {
     headerActions: { display: 'flex', alignItems: 'center', gap: '0.8rem', flexWrap: 'wrap' },
     title: { fontSize: '2.2rem', color: 'var(--color-text)' },
     meta: { color: 'var(--color-text-light)' },
+    seasonalBadge: { display: 'inline-block', marginTop: '0.4rem', background: 'rgba(16,185,129,0.15)', color: '#0f766e', padding: '4px 10px', borderRadius: '999px', fontSize: '0.8rem', fontWeight: '700' },
     cookBtn: { background: 'var(--color-primary)', color: '#ffffff', border: 'none', padding: '10px 16px', borderRadius: '10px', display: 'inline-flex', alignItems: 'center', gap: '8px', fontWeight: '700', cursor: 'pointer' },
     secondaryBtn: { background: 'transparent', color: 'var(--color-text)', border: '1px solid var(--color-border)', padding: '10px 16px', borderRadius: '10px', fontWeight: '700', cursor: 'pointer' },
+    scaleControl: { display: 'flex', alignItems: 'center', gap: '10px', background: 'var(--color-surface)', border: '1px solid var(--color-border)', padding: '8px 12px', borderRadius: '999px' },
+    scaleLabel: { fontSize: '0.85rem', color: 'var(--color-text-light)' },
+    scaleRange: { accentColor: 'var(--color-primary)', width: '140px' },
+    scaleValue: { fontWeight: '700', color: 'var(--color-text)' },
     heroImage: { height: '260px', borderRadius: '20px', marginBottom: '2rem', border: '1px solid var(--color-border)', overflow: 'hidden', background: 'var(--color-surface-2)' },
     heroImg: { width: '100%', height: '100%', objectFit: 'cover', display: 'block' },
     section: { marginBottom: '2rem' },
@@ -459,13 +525,22 @@ const styles = {
     ingredientName: { fontWeight: '700', color: 'var(--color-text)' },
     ingredientValue: { color: 'var(--color-text-light)', fontSize: '0.9rem' },
     haveBadge: { background: 'rgba(17,17,17,0.08)', color: 'var(--color-text)', padding: '4px 10px', borderRadius: '999px', fontSize: '0.8rem', fontWeight: '700' },
+    partialBadge: { background: 'rgba(245,158,11,0.18)', color: '#b45309', padding: '4px 10px', borderRadius: '999px', fontSize: '0.8rem', fontWeight: '700' },
     missingBadge: { background: 'rgba(239,68,68,0.15)', color: '#ef4444', padding: '4px 10px', borderRadius: '999px', fontSize: '0.8rem', fontWeight: '700' },
-    missingList: { display: 'flex', flexWrap: 'wrap', gap: '0.5rem' },
+    missingList: { display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.8rem' },
     availableList: { display: 'flex', flexWrap: 'wrap', gap: '0.5rem' },
     missingTag: { background: 'rgba(239,68,68,0.15)', color: '#ef4444', padding: '6px 10px', borderRadius: '999px', fontSize: '0.85rem' },
     haveTag: { background: 'rgba(17,17,17,0.08)', color: 'var(--color-text)', padding: '6px 10px', borderRadius: '999px', fontSize: '0.85rem' },
+    partialTag: { background: 'rgba(245,158,11,0.16)', color: '#b45309', padding: '6px 10px', borderRadius: '999px', fontSize: '0.85rem' },
     missingBtn: { marginTop: '1rem', background: 'var(--color-primary)', color: '#ffffff', border: 'none', padding: '10px 14px', borderRadius: '10px', fontWeight: '700', cursor: 'pointer' },
     missingMsg: { marginTop: '0.6rem', color: 'var(--color-text-light)' },
+    substitutionPanel: { background: 'var(--color-surface-2)', borderRadius: '12px', border: '1px solid var(--color-border)', padding: '1rem', marginBottom: '1rem' },
+    substitutionTitle: { fontWeight: '700', marginBottom: '0.6rem', color: 'var(--color-text)' },
+    substitutionRow: { display: 'grid', gridTemplateColumns: '140px 1fr', gap: '0.8rem', alignItems: 'start', padding: '8px 0', borderTop: '1px dashed var(--color-border)' },
+    substitutionIngredient: { fontWeight: '700', color: 'var(--color-text)' },
+    substitutionOptions: { display: 'flex', flexWrap: 'wrap', gap: '0.5rem' },
+    subOption: { background: '#fff', border: '1px solid var(--color-border)', borderRadius: '999px', padding: '6px 10px', fontSize: '0.8rem', color: 'var(--color-text-light)' },
+    subOptionActive: { background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.3)', color: '#15803d', borderRadius: '999px', padding: '6px 10px', fontSize: '0.8rem' },
     stepList: { paddingLeft: '1.2rem', color: 'var(--color-text)' },
     stepItem: { marginBottom: '0.6rem' },
     cookResult: { marginTop: '1.5rem', background: 'var(--color-surface)', borderRadius: '12px', padding: '12px', border: '1px solid var(--color-border)' },

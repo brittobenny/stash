@@ -43,6 +43,7 @@ class ProductSerializer(serializers.ModelSerializer):
             "name",
             "price",
             "stock_quantity",
+            "low_stock_threshold",
             "unit",
             "image",
             "is_active",

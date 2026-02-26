@@ -73,12 +73,28 @@ def _clean_name(name: str) -> str:
 
     # normalize separators
     name = name.replace("/", " ")
+    name = name.replace("saltpepper", "salt pepper")
+    name = name.replace("salt & pepper", "salt pepper")
+    name = name.replace("salt and pepper", "salt pepper")
+    name = name.replace("pepper and salt", "salt pepper")
 
     # remove non letters
     name = re.sub(r"[^a-zA-Z ]", " ", name)
     name = re.sub(r"\s+", " ", name).strip()
+    tokens = [t for t in name.split() if len(t) > 1]
+    name = " ".join(tokens).strip()
 
-    return name
+    aliases = {
+        "salt pepper": "salt",
+        "tablespoon milk": "milk",
+        "tbsp milk": "milk",
+        "su ar": "sugar",
+        "ye ast": "yeast",
+        "ses ame": "sesame",
+    }
+    return aliases.get(name, name)
+
+
 
 
 def _guess_default_grams(clean_name: str) -> float:
@@ -127,6 +143,15 @@ def parse_ingredient(text: str):
     if not raw:
         return {"name": "", "grams": 0.0, "quantity": None, "unit": None, "display": ""}
 
+    raw = raw.replace("\u00a0", " ")
+    raw = re.sub(r"\s+", " ", raw).strip()
+    # Handle malformed tokens like "tablespoonmilk" -> "tablespoon milk".
+    raw = re.sub(
+        r"\b(teaspoons?|tsp|tablespoons?|tbsp|cups?|gram|grams|g|kg|ml|liter|liters|pieces?|piece|pcs|inch|inches|cm)(?=[a-z])",
+        r"\1 ",
+        raw,
+    )
+
     # 1) quantity at start (supports fractions/unicode)
     qty_match = re.match(
         r"^\s*(\d+\s+\d+\s*/\s*\d+|\d+\s*/\s*\d+|[¼½¾⅓⅔⅛⅜⅝⅞]|\d+(?:\.\d+)?)\s*(.*)$",
@@ -141,7 +166,7 @@ def parse_ingredient(text: str):
 
     # 2) unit at start of remainder (includes inch/cm)
     unit_match = re.match(
-        r"^(teaspoons?|tsp|tablespoons?|tbsp|cups?|gram|grams|g|kg|ml|liter|liters|pieces?|piece|pcs|inch|inches|cm)\b\s*(.*)$",
+        r"^(teaspoons?|tsp|tablespoons?|tbsp|cups?|gram|grams|g|kg|ml|liter|liters|pieces?|piece|pcs|inch|inches|cm)\s*(.*)$",
         rest,
     )
 
@@ -174,6 +199,16 @@ def parse_ingredient(text: str):
             }
 
     # ✅ 5) qty exists but unit missing -> treat as pieces if possible
+    if not unit:
+        unit_in_name = re.match(
+            r"^(teaspoons?|tsp|tablespoons?|tbsp|cups?|gram|grams|g|kg|ml|liter|liters|pieces?|piece|pcs|inch|inches|cm)\s+(.+)$",
+            clean_name,
+        )
+        if unit_in_name:
+            raw_unit = unit_in_name.group(1)
+            unit = raw_unit
+            clean_name = _clean_name(unit_in_name.group(2))
+
     if not unit:
         piece_grams = _grams_for_piece(qty, clean_name)
         if piece_grams is not None:

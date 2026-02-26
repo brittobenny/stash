@@ -1,4 +1,5 @@
 import csv
+import re
 from pathlib import Path
 
 from django.db import transaction, models
@@ -11,6 +12,7 @@ from .serializers import PantryItemSerializer
 from .serializers import InventoryItemSerializer
 from .ml.recommender import recommender
 from nutrition.calculator import calculate_nutrition
+from .substitutions import find_substitutable_ingredients, normalize_name as normalize_sub_name
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 from django.http import HttpResponse, HttpResponseRedirect, FileResponse
@@ -243,7 +245,35 @@ def recommend_meals(request):
             for item in pantry_items
         ]
 
-    results = recommender.recommend(ingredients)
+    if request.method == "POST":
+        top_k_raw = request.data.get("top_k", 10)
+        min_match_raw = request.data.get("min_match_percent", 25)
+    else:
+        top_k_raw = request.query_params.get("top_k", 10)
+        min_match_raw = request.query_params.get("min_match_percent", 25)
+
+    try:
+        top_k = int(top_k_raw)
+    except (TypeError, ValueError):
+        top_k = 10
+    top_k = max(1, min(10, top_k))
+
+    try:
+        min_match_percent = float(min_match_raw)
+    except (TypeError, ValueError):
+        min_match_percent = 25.0
+    min_match_percent = max(0.0, min(100.0, min_match_percent))
+
+    try:
+        results = recommender.recommend(
+            ingredients,
+            top_k=top_k,
+            min_match_percent=min_match_percent,
+        )
+    except Exception as exc:
+        # Keep API resilient in production while surfacing the issue to logs.
+        print(f"Recommendation engine error: {exc}")
+        results = []
 
     # 🔹 Attach high calorie warning
     for recipe in results:
@@ -253,6 +283,8 @@ def recommend_meals(request):
 
     return Response({
         "pantry_items": ingredients,
+        "top_k": top_k,
+        "min_match_percent": min_match_percent,
         "recommendations": results
     })
 
@@ -260,18 +292,81 @@ def recommend_meals(request):
 SUPPORTED_UNITS = {"g", "grams", "ml", "pcs", "piece"}
 
 def normalize_name(name: str) -> str:
-    n = (name or "").lower().strip()
+    n = normalize_sub_name(name or "")
+    if not n:
+        return ""
 
-    # remove common trailing notes
-    for junk in ["- as required", "- as needed", "- to taste", "to taste", "as needed", "as required", "optional"]:
-        n = n.replace(junk, "")
+    phrases_to_remove = [
+        "or as needed",
+        "as needed",
+        "to taste",
+        "as required",
+        "for garnish",
+    ]
+    words_to_remove = {
+        "optional",
+        "fresh",
+        "dried",
+        "chopped",
+        "sliced",
+        "minced",
+        "whole",
+        "stalk",
+        "stalks",
+        "leaf",
+        "leaves",
+        "tsp",
+        "tbsp",
+        "teaspoon",
+        "teaspoons",
+        "tablespoon",
+        "tablespoons",
+        "cup",
+        "cups",
+        "gram",
+        "grams",
+        "g",
+        "kg",
+        "ml",
+        "liter",
+        "liters",
+        "piece",
+        "pieces",
+        "pcs",
+    }
+    for phrase in phrases_to_remove:
+        n = re.sub(rf"\b{re.escape(phrase)}\b", " ", n)
+    n = re.sub(r"[-_/]", " ", n)
 
-    n = n.replace("/", " ")
-    n = " ".join(n.split())
+    tokens = []
+    for token in re.split(r"\s+", n):
+        t = token.strip()
+        if not t or t in {"of", "and", "or", "to", "as", "for"}:
+            continue
+        if t in words_to_remove:
+            continue
+        if t.endswith("s") and len(t) > 3:
+            t = t[:-1]
+        if len(t) <= 1:
+            continue
+        tokens.append(t)
+
+    n = " ".join(tokens).strip()
 
     aliases = {
+        "clove garlic": "garlic",
         "cloves garlic": "garlic",
+        "garlic clove": "garlic",
         "garlic cloves": "garlic",
+        "tablespoon milk": "milk",
+        "tbsp milk": "milk",
+        "saltpepper": "salt",
+        "salt pepper": "salt",
+        "su ar": "sugar",
+        "spring onion": "green onion",
+        "green onions": "green onion",
+        "spring onions": "green onion",
+        "scallions": "green onion",
         "red chilli flakes": "chilli flakes",
         "red chili flakes": "chilli flakes",
     }
@@ -286,6 +381,51 @@ def parse_bool(val) -> bool:
         return val.strip().lower() in {"1", "true", "yes", "y", "on"}
     return False
 
+def _format_qty(value: float) -> str:
+    try:
+        num = float(value)
+    except (TypeError, ValueError):
+        return "0"
+    if abs(num - round(num)) < 0.01:
+        return str(int(round(num)))
+    return f"{num:.2f}".rstrip("0").rstrip(".")
+
+def scale_parsed_ingredients(parsed_ingredients, scale: float):
+    if not parsed_ingredients:
+        return []
+    try:
+        scale = float(scale or 1.0)
+    except (TypeError, ValueError):
+        scale = 1.0
+    if scale <= 0:
+        scale = 1.0
+
+    scaled = []
+    for item in parsed_ingredients:
+        name = item.get("name")
+        grams = float(item.get("grams") or 0) * scale
+        qty = item.get("quantity")
+        unit = item.get("unit")
+        display = item.get("display")
+        scaled_qty = None
+        if qty is not None:
+            try:
+                scaled_qty = float(qty) * scale
+            except (TypeError, ValueError):
+                scaled_qty = None
+        if scaled_qty is not None and unit:
+            display = f"{_format_qty(scaled_qty)} {unit}"
+        else:
+            display = f"{_format_qty(grams)} g"
+        scaled.append({
+            "name": name,
+            "grams": round(grams, 2),
+            "quantity": scaled_qty,
+            "unit": unit,
+            "display": display,
+        })
+    return scaled
+
 def build_ingredient_status(pantry_items, parsed_ingredients):
     pantry_map = {
         normalize_name(p.ingredient.name): float(p.quantity or 0)
@@ -294,8 +434,16 @@ def build_ingredient_status(pantry_items, parsed_ingredients):
     status_list = []
     for item in parsed_ingredients:
         ing_name = normalize_name(item.get("name"))
+        if not ing_name:
+            continue
         needed = float(item.get("grams") or 0)
         have = float(pantry_map.get(ing_name, 0))
+        if have <= 0:
+            status_value = "missing"
+        elif needed > 0 and have < needed:
+            status_value = "partial"
+        else:
+            status_value = "have"
         status_list.append({
             "name": ing_name,
             "display": item.get("display") or f"{round(needed, 2)} g",
@@ -303,7 +451,8 @@ def build_ingredient_status(pantry_items, parsed_ingredients):
             "unit": item.get("unit"),
             "needed_g": round(needed, 2),
             "have_g": round(have, 2),
-            "status": "have" if have >= needed and needed > 0 else "missing"
+            "status": status_value,
+            "short_g": round(max(0.0, needed - have), 2),
         })
     return status_list
 
@@ -403,16 +552,39 @@ def recipe_detail(request, recipe_id):
     if not recipe:
         return Response({"error": "Recipe not found"}, status=status.HTTP_404_NOT_FOUND)
 
+    scale_raw = request.query_params.get("scale")
+    try:
+        scale = float(scale_raw) if scale_raw is not None else 1.0
+    except (TypeError, ValueError):
+        scale = 1.0
+    if scale <= 0:
+        scale = 1.0
+    if scale < 0.25:
+        scale = 0.25
+    if scale > 4.0:
+        scale = 4.0
+
     pantry_items = PantryItem.objects.select_related("ingredient").filter(user=request.user)
-    status_list = build_ingredient_status(pantry_items, recipe.get("parsed_ingredients", []))
+    scaled_ingredients = scale_parsed_ingredients(recipe.get("parsed_ingredients", []), scale)
+    status_list = build_ingredient_status(pantry_items, scaled_ingredients)
 
     pantry_names = [normalize_name(p.ingredient.name) for p in pantry_items]
-    recipe_set = set(recipe.get("ingredients_set", []))
-    pantry_set = set(pantry_names)
+    available = {
+        item["name"]
+        for item in status_list
+        if item.get("status") in {"have", "partial"} and item.get("name")
+    }
+    missing = {item["name"] for item in status_list if item.get("status") == "missing" and item.get("name")}
+    insufficient = {item["name"] for item in status_list if item.get("status") == "partial" and item.get("name")}
 
-    recipe["available_ingredients"] = sorted(list(pantry_set & recipe_set))
-    recipe["missing_ingredients"] = sorted(list(recipe_set - pantry_set))
+    recipe["available_ingredients"] = sorted(list(available))
+    recipe["missing_ingredients"] = sorted(list(missing))
+    recipe["insufficient_ingredients"] = sorted(list(insufficient))
     recipe["ingredient_status"] = status_list
+    recipe["parsed_ingredients"] = scaled_ingredients
+    recipe["nutrition"] = calculate_nutrition(scaled_ingredients)
+    recipe["scale"] = scale
+    recipe["substitution_suggestions"] = find_substitutable_ingredients(recipe["missing_ingredients"], pantry_names)
 
     return Response(recipe)
 
@@ -432,6 +604,17 @@ def cook_recipe(request):
         return Response({"error": "recipe_id is required"}, status=status.HTTP_400_BAD_REQUEST)
 
     allow_partial = parse_bool(request.data.get("allow_partial", False))
+    scale_raw = request.data.get("scale")
+    try:
+        scale = float(scale_raw) if scale_raw is not None else 1.0
+    except (TypeError, ValueError):
+        scale = 1.0
+    if scale <= 0:
+        scale = 1.0
+    if scale < 0.25:
+        scale = 0.25
+    if scale > 4.0:
+        scale = 4.0
 
     pantry_items = PantryItem.objects.select_related("ingredient").filter(user=request.user)
     pantry_names = [normalize_name(p.ingredient.name) for p in pantry_items]
@@ -453,7 +636,7 @@ def cook_recipe(request):
                 continue
             parsed_ingredients.append({"name": name, "grams": grams})
     else:
-        parsed_ingredients = recipe.get("parsed_ingredients", [])
+        parsed_ingredients = scale_parsed_ingredients(recipe.get("parsed_ingredients", []), scale)
 
     if not parsed_ingredients:
         return Response({"error": "No parsed_ingredients found for this recipe"}, status=status.HTTP_400_BAD_REQUEST)
@@ -544,6 +727,7 @@ def cook_recipe(request):
         {
             "status": "partial" if insufficient else "success",
             "allow_partial": allow_partial,
+            "scale": scale,
             "cooked_recipe": {"id": recipe["id"], "name": recipe["name"]},
             "deducted": deducted,
             "missing": insufficient,

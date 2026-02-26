@@ -1,12 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { ShoppingBag, Menu, User, LogOut } from 'lucide-react';
+import { Bell, LogOut, UserCircle } from 'lucide-react';
+import { accountService } from '../services/api';
 import '../styles/global.css';
 
 const Navbar = () => {
     const navigate = useNavigate();
     const location = useLocation();
     const [role, setRole] = useState(null);
+    const [profileImage, setProfileImage] = useState(null);
+    const [unreadCount, setUnreadCount] = useState(0);
 
     const isActive = (path) => (
         location.pathname === path ||
@@ -17,6 +20,36 @@ const Navbar = () => {
         // Simple check on mount and location change
         const r = localStorage.getItem('role');
         setRole(r);
+        try {
+            const rawUser = localStorage.getItem('user');
+            if (rawUser) {
+                const parsed = JSON.parse(rawUser);
+                if (parsed?.image) {
+                    const img = String(parsed.image);
+                    setProfileImage(img.startsWith('http') ? img : `http://127.0.0.1:8000${img}`);
+                } else {
+                    setProfileImage(null);
+                }
+            } else {
+                setProfileImage(null);
+            }
+        } catch (err) {
+            setProfileImage(null);
+        }
+
+        if (r === 'customer') {
+            accountService.getNotifications()
+                .then((res) => {
+                    const data = res.data || [];
+                    const unread = data.filter((n) => !n.is_read).length;
+                    setUnreadCount(unread);
+                })
+                .catch(() => {
+                    setUnreadCount(0);
+                });
+        } else {
+            setUnreadCount(0);
+        }
     }, [location]);
 
     const handleLogout = () => {
@@ -57,6 +90,23 @@ const Navbar = () => {
                 </ul>
 
                 <div style={styles.actions}>
+                    {role === 'customer' && (
+                        <div style={styles.iconRow}>
+                            <Link to="/customer/notifications" style={styles.iconBtn} aria-label="Notifications">
+                                <Bell size={18} />
+                                {unreadCount > 0 && (
+                                    <span style={styles.notifBadge}>{unreadCount > 9 ? '9+' : unreadCount}</span>
+                                )}
+                            </Link>
+                            <Link to="/customer/account" style={styles.iconBtn} aria-label="Account">
+                                {profileImage ? (
+                                    <img src={profileImage} alt="Profile" style={styles.avatarImg} />
+                                ) : (
+                                    <UserCircle size={20} />
+                                )}
+                            </Link>
+                        </div>
+                    )}
                     {role ? (
                         <button onClick={handleLogout} className="btn" style={styles.logoutBtn}>
                             <LogOut size={16} /> Logout
@@ -124,9 +174,37 @@ const styles = {
     },
     actions: {
         display: 'flex',
-        gap: '1rem',
-        justifySelf: 'end'
+        gap: '0.8rem',
+        justifySelf: 'end',
+        alignItems: 'center',
     },
+    iconRow: { display: 'flex', gap: '0.5rem', alignItems: 'center' },
+    iconBtn: {
+        width: '38px',
+        height: '38px',
+        borderRadius: '999px',
+        border: '1px solid var(--color-border)',
+        background: 'var(--color-surface-2)',
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        color: 'var(--color-text)',
+        textDecoration: 'none',
+        position: 'relative',
+    },
+    notifBadge: {
+        position: 'absolute',
+        top: '-6px',
+        right: '-6px',
+        background: 'var(--color-primary)',
+        color: '#fff',
+        borderRadius: '999px',
+        fontSize: '0.7rem',
+        fontWeight: 700,
+        padding: '2px 6px',
+        boxShadow: '0 6px 12px rgba(225,29,46,0.25)',
+    },
+    avatarImg: { width: '26px', height: '26px', borderRadius: '50%', objectFit: 'cover' },
     logoutBtn: {
         display: 'flex',
         alignItems: 'center',

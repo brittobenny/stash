@@ -36,7 +36,7 @@ class ProfileSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = UserProfile
-        fields = ["name", "email", "mobile_number", "address", "location", "role"]
+        fields = ["name", "email", "mobile_number", "address", "location", "role", "image"]
 
 
 class NotificationSerializer(serializers.ModelSerializer):

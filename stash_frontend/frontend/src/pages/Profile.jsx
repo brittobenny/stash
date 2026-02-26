@@ -1,15 +1,31 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { User, Mail, Phone, Shield, PackageCheck, Flame, Activity, Package, Bell } from 'lucide-react';
+import {
+    User,
+    Mail,
+    Phone,
+    PackageCheck,
+    Flame,
+    Activity,
+    Package,
+    Pencil,
+    X,
+    Bell,
+    MapPin,
+    Sparkles,
+} from 'lucide-react';
 import { pantryService, shopService, inventoryService, accountService, nutritionService } from '../services/api';
 import '../styles/global.css';
+import '../styles/profile.css';
 
 const Profile = () => {
     const navigate = useNavigate();
     const [user, setUser] = useState(null);
     const [profileComplete, setProfileComplete] = useState(true);
-    const [profileForm, setProfileForm] = useState({ address: '', location: '', mobile_number: '' });
+    const [profileForm, setProfileForm] = useState({ name: '', address: '', location: '', mobile_number: '' });
     const [savingProfile, setSavingProfile] = useState(false);
+    const [profileImageFile, setProfileImageFile] = useState(null);
+    const [showProfileEditor, setShowProfileEditor] = useState(false);
     const [metrics, setMetrics] = useState({
         pantryCount: 0,
         ordersCount: 0,
@@ -23,7 +39,8 @@ const Profile = () => {
         lastCookedText: 'No activity',
     });
     const [usage, setUsage] = useState([]);
-    const [nutritionProfile, setNutritionProfile] = useState({
+    const [notifications, setNotifications] = useState([]);
+    const [nutritionProfile] = useState({
         calorie_goal: 2000,
         protein_goal: 90,
         carb_goal: 250,
@@ -35,17 +52,8 @@ const Profile = () => {
         carbs: 0,
         fat: 0,
     });
-    const [notifications, setNotifications] = useState([]);
-    const [notifLoading, setNotifLoading] = useState(false);
-    const [notifError, setNotifError] = useState('');
 
     useEffect(() => {
-        // Fetch user from localStorage or API
-        // Currently API doesn't have a /me endpoint so we rely on what we saved or mock it
-        // Ideally, we should pull from an API. For now, let's look at localStorage 'user' if we saved it in Login.jsx
-        // Note: In Login.jsx I haven't saved the user object yet, only role/token. 
-        // I will need to update Login.jsx to save the User object stringified.
-
         const loadProfile = async () => {
             try {
                 const res = await accountService.getProfile();
@@ -57,33 +65,47 @@ const Profile = () => {
                     role: data.role,
                     address: data.address,
                     location: data.location,
+                    image: data.image,
                 });
                 setProfileComplete(Boolean(data.profile_completed));
                 setProfileForm({
+                    name: data.name || '',
                     address: data.address || '',
                     location: data.location || '',
                     mobile_number: data.mobile_number || '',
                 });
-                localStorage.setItem('user', JSON.stringify({
-                    name: data.name,
-                    email: data.email,
-                    role: data.role,
-                    mobile_number: data.mobile_number,
-                    address: data.address,
-                    location: data.location,
-                    profile_completed: data.profile_completed,
-                }));
+                localStorage.setItem(
+                    'user',
+                    JSON.stringify({
+                        name: data.name,
+                        email: data.email,
+                        role: data.role,
+                        mobile_number: data.mobile_number,
+                        address: data.address,
+                        location: data.location,
+                        profile_completed: data.profile_completed,
+                        image: data.image,
+                    })
+                );
             } catch (err) {
                 const storedUser = localStorage.getItem('user');
                 if (storedUser) {
-                    setUser(JSON.parse(storedUser));
+                    const parsed = JSON.parse(storedUser);
+                    setUser(parsed);
+                    setProfileForm({
+                        name: parsed.name || '',
+                        address: parsed.address || '',
+                        location: parsed.location || '',
+                        mobile_number: parsed.mobile_number || '',
+                    });
                 } else {
                     setUser({
                         name: 'Guest User',
                         email: 'user@example.com',
                         mobile_number: 'N/A',
-                        role: localStorage.getItem('role') || 'Customer'
+                        role: localStorage.getItem('role') || 'Customer',
                     });
+                    setProfileForm({ name: '', address: '', location: '', mobile_number: '' });
                 }
             }
         };
@@ -94,14 +116,15 @@ const Profile = () => {
         const loadMetrics = async () => {
             try {
                 const today = new Date().toISOString().slice(0, 10);
-                const [pantryRes, ordersRes, usageRes, nutritionSummaryRes, todayScoreRes, cookedRes] = await Promise.all([
-                    pantryService.getItems(),
-                    shopService.listOrders(),
-                    inventoryService.listUsage(),
-                    nutritionService.getProfileSummary(),
-                    nutritionService.getDailyScores({ start: today, end: today }),
-                    nutritionService.getCookedHistory({ limit: 200 }),
-                ]);
+                const [pantryRes, ordersRes, usageRes, nutritionSummaryRes, todayScoreRes, cookedRes] =
+                    await Promise.all([
+                        pantryService.getItems(),
+                        shopService.listOrders(),
+                        inventoryService.listUsage(),
+                        nutritionService.getProfileSummary(),
+                        nutritionService.getDailyScores({ start: today, end: today }),
+                        nutritionService.getCookedHistory({ limit: 200 }),
+                    ]);
                 const summary = nutritionSummaryRes.data || {};
                 const todayEntry = (todayScoreRes.data || [])[0] || null;
                 const cookedEntries = cookedRes.data || [];
@@ -142,363 +165,413 @@ const Profile = () => {
 
     useEffect(() => {
         const loadNotifications = async () => {
-            setNotifLoading(true);
-            setNotifError('');
             try {
                 const res = await accountService.getNotifications();
                 setNotifications(res.data || []);
             } catch (err) {
-                setNotifError('Failed to load notifications.');
-            } finally {
-                setNotifLoading(false);
+                setNotifications([]);
             }
         };
         loadNotifications();
     }, []);
 
     const macroBars = [
-        { label: 'Calories', value: nutritionProgress.calories, goal: nutritionProfile.calorie_goal, color: 'var(--color-primary)' },
-        { label: 'Protein', value: nutritionProgress.protein, goal: nutritionProfile.protein_goal, color: 'var(--color-primary)' },
-        { label: 'Carbs', value: nutritionProgress.carbs, goal: nutritionProfile.carb_goal, color: 'var(--color-primary)' },
-        { label: 'Fat', value: nutritionProgress.fat, goal: nutritionProfile.fat_goal, color: 'var(--color-primary)' },
+        { label: 'Calories', value: nutritionProgress.calories, goal: nutritionProfile.calorie_goal, color: '#f43f5e' },
+        { label: 'Protein', value: nutritionProgress.protein, goal: nutritionProfile.protein_goal, color: '#14b8a6' },
+        { label: 'Carbs', value: nutritionProgress.carbs, goal: nutritionProfile.carb_goal, color: '#f59e0b' },
+        { label: 'Fat', value: nutritionProgress.fat, goal: nutritionProfile.fat_goal, color: '#3b82f6' },
     ];
 
     const maxUsage = Math.max(...usage.map((u) => Number(u.quantity || 0)), 1);
 
     const handleProfileSave = async () => {
         setSavingProfile(true);
+        let shouldAlert = false;
         try {
-            const res = await accountService.updateProfile(profileForm);
-            const data = res.data || {};
-            setUser((prev) => ({ ...prev, ...data }));
-            setProfileComplete(Boolean(data.profile_completed));
-            localStorage.setItem('user', JSON.stringify({
-                name: data.name,
-                email: data.email,
-                role: data.role,
-                mobile_number: data.mobile_number,
-                address: data.address,
-                location: data.location,
-                profile_completed: data.profile_completed,
-            }));
+            await accountService.updateProfile({ ...profileForm, image: profileImageFile });
         } catch (err) {
-            alert('Failed to update profile');
+            shouldAlert = true;
         } finally {
+            try {
+                const refreshed = await accountService.getProfile();
+                const data = refreshed.data || {};
+                setUser((prev) => ({ ...prev, ...data }));
+                setProfileForm({
+                    name: data.name || profileForm.name || '',
+                    address: data.address || profileForm.address || '',
+                    location: data.location || profileForm.location || '',
+                    mobile_number: data.mobile_number || profileForm.mobile_number || '',
+                });
+                setProfileComplete(Boolean(data.profile_completed));
+                localStorage.setItem(
+                    'user',
+                    JSON.stringify({
+                        name: data.name || profileForm.name || user?.name,
+                        email: data.email,
+                        role: data.role,
+                        mobile_number: data.mobile_number || profileForm.mobile_number,
+                        address: data.address || profileForm.address,
+                        location: data.location || profileForm.location,
+                        profile_completed: data.profile_completed,
+                        image: data.image,
+                    })
+                );
+                setProfileImageFile(null);
+                setShowProfileEditor(false);
+                shouldAlert = false;
+            } catch (refreshErr) {
+                if (shouldAlert) {
+                    alert('Failed to update profile');
+                }
+            }
             setSavingProfile(false);
         }
     };
 
-    const handleMarkRead = async (id) => {
-        try {
-            await accountService.markNotificationRead(id);
-            setNotifications((prev) => prev.map((n) => n.id === id ? { ...n, is_read: true } : n));
-        } catch (err) {
-            setNotifError('Failed to update notification.');
-        }
-    };
+    if (!user) return <div className="profile-loading">Loading profile...</div>;
 
-    const handleMarkAllRead = async () => {
-        try {
-            await accountService.markAllNotificationsRead();
-            setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
-        } catch (err) {
-            setNotifError('Failed to update notifications.');
-        }
-    };
+    const profileImageSrc = user?.image
+        ? String(user.image).startsWith('http')
+            ? user.image
+            : `http://127.0.0.1:8000${user.image}`
+        : null;
 
-    if (!user) return <div style={{ padding: '2rem' }}>Loading profile...</div>;
+    const completionScore = Math.round(
+        (Number(Boolean(profileForm.address)) +
+            Number(Boolean(profileForm.location)) +
+            Number(Boolean(profileForm.mobile_number))) /
+            3 *
+            100
+    );
+
+    const unreadCount = notifications.filter((n) => !n.is_read).length;
 
     return (
-        <div style={styles.page}>
+        <div className="profile-page">
             {!profileComplete && (
-                <div style={styles.alert}>
-                    Your profile is incomplete. Please add your address and location to place orders.
+                <div className="profile-alert">
+                    Your profile is incomplete. Add your address and location to place orders.
                 </div>
             )}
-            <div style={styles.grid}>
-                <div style={styles.card}>
-                    <div style={styles.header}>
-                        <div style={styles.avatar}>
-                            <User size={40} color="var(--color-accent)" />
-                        </div>
-                        <h1 style={styles.name}>{user.name || 'Stash User'}</h1>
-                        <span style={styles.roleBadge}>{user.role}</span>
+
+            <div className="account-shell">
+                <aside className="account-left">
+                    <div className="side-brand card float-card fade-up">
+                        <span className="brand-badge">STASH</span>
+                        <span className="brand-text">Client Profile</span>
                     </div>
 
-                    <div style={styles.details}>
-                        <div style={styles.row}>
-                            <Mail size={20} style={styles.icon} />
+                    <div className="profile-card card fade-up">
+                        <div className="profile-header">
+                            <div className="profile-avatar">
+                                {profileImageSrc ? (
+                                    <img src={profileImageSrc} alt="Profile" />
+                                ) : (
+                                    <User size={32} />
+                                )}
+                            </div>
                             <div>
-                                <label style={styles.label}>Email</label>
-                                <p style={styles.value}>{user.email}</p>
+                                <h2>{user.name || 'Stash User'}</h2>
+                                <span className="role-pill">{user.role}</span>
                             </div>
                         </div>
-                        <div style={styles.row}>
-                            <Phone size={20} style={styles.icon} />
+                        <div className="profile-meta">
                             <div>
-                                <label style={styles.label}>Mobile</label>
-                                <p style={styles.value}>{user.mobile_number || 'Not provided'}</p>
+                                <Mail size={16} />
+                                <span>{user.email}</span>
+                            </div>
+                            <div>
+                                <Phone size={16} />
+                                <span>{user.mobile_number || 'Not provided'}</span>
+                            </div>
+                            <div>
+                                <MapPin size={16} />
+                                <span>{user.location || 'Add location'}</span>
                             </div>
                         </div>
-                        <div style={styles.row}>
-                            <Shield size={20} style={styles.icon} />
-                            <div>
-                                <label style={styles.label}>Address</label>
-                                <p style={styles.value}>{user.address || 'Not provided'}</p>
+                        <div className="profile-chips">
+                            <span>Pantry {metrics.pantryCount}</span>
+                            <span>Orders {metrics.ordersCount}</span>
+                            <span>Streak {metrics.streak}d</span>
+                        </div>
+                        <div className="completion">
+                            <div className="completion-row">
+                                <span>Profile completion</span>
+                                <strong>{completionScore}%</strong>
+                            </div>
+                            <div className="completion-track">
+                                <div className="completion-fill" style={{ width: `${completionScore}%` }} />
                             </div>
                         </div>
-                        <div style={styles.row}>
-                            <Shield size={20} style={styles.icon} />
-                            <div>
-                                <label style={styles.label}>Location</label>
-                                <p style={styles.value}>{user.location || 'Not provided'}</p>
-                            </div>
+                        <div className="profile-actions">
+                            <button className="btn-primary" onClick={() => setShowProfileEditor(true)}>
+                                <Pencil size={16} /> Edit Profile
+                            </button>
+                            <button className="btn-secondary" onClick={() => navigate('/customer/orders')}>
+                                <PackageCheck size={16} /> Orders
+                            </button>
+                            <button className="btn-ghost" onClick={() => navigate('/customer/notifications')}>
+                                <Bell size={16} /> Notifications
+                                {unreadCount > 0 && <span className="notif-badge">{unreadCount}</span>}
+                            </button>
                         </div>
-                        <div style={styles.row}>
-                            <Shield size={20} style={styles.icon} />
-                            <div>
-                                <label style={styles.label}>Account Type</label>
-                                <p style={styles.value}>{user.role}</p>
-                            </div>
-                        </div>
-                        <button style={styles.ordersBtn} onClick={() => navigate('/customer/orders')}>
-                            <PackageCheck size={18} /> View Orders
+                    </div>
+
+                    <div className="side-menu card fade-up">
+                        <button className="menu-btn active">
+                            <Sparkles size={16} /> Overview
+                        </button>
+                        <button className="menu-btn" onClick={() => navigate('/customer/inventory')}>
+                            <Package size={16} /> Pantry
+                        </button>
+                        <button className="menu-btn" onClick={() => navigate('/customer/cook')}>
+                            <Activity size={16} /> Cook Studio
+                        </button>
+                        <button className="menu-btn" onClick={() => navigate('/customer/nutrition')}>
+                            <Flame size={16} /> Nutrition
                         </button>
                     </div>
-                </div>
+                </aside>
 
-                <div style={styles.dashboard}>
-                    <h2 style={styles.dashboardTitle}>Your Dashboard</h2>
-                    <div style={styles.metrics}>
-                        <div style={styles.metricCard}>
+                <main className="account-main">
+                    <section className="hero-card card fade-up">
+                        <div>
+                            <p className="kicker">ACCOUNT OVERVIEW</p>
+                            <h1>Welcome back, {user.name?.split(' ')[0] || 'Stash'}.</h1>
+                            <p className="hero-sub">
+                                Track your pantry, orders, and nutrition goals in one space. Your habits are trending
+                                upward this week.
+                            </p>
+                            <div className="hero-actions">
+                                <button className="btn-primary" onClick={() => setShowProfileEditor(true)}>
+                                    Update Profile
+                                </button>
+                                <button className="btn-secondary" onClick={() => navigate('/customer/shop')}>
+                                    Visit Shop
+                                </button>
+                            </div>
+                        </div>
+                        <div className="hero-stats">
+                            <div className="stat-bubble bubble-a float-card">
+                                <span>Today Score</span>
+                                <strong>{Math.round(metrics.todayScore)}</strong>
+                            </div>
+                            <div className="stat-bubble bubble-b float-card">
+                                <span>Calories Today</span>
+                                <strong>{metrics.caloriesToday}</strong>
+                            </div>
+                            <div className="stat-bubble bubble-c float-card">
+                                <span>Weekly Avg</span>
+                                <strong>{Math.round(metrics.weeklyScore)}</strong>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section className="metric-grid fade-up">
+                        <div className="metric-card tint-a">
                             <Package size={18} />
                             <div>
-                                <p style={styles.metricLabel}>Pantry Items</p>
-                                <p style={styles.metricValue}>{metrics.pantryCount}</p>
+                                <p>Pantry Items</p>
+                                <h3>{metrics.pantryCount}</h3>
                             </div>
                         </div>
-                        <div style={styles.metricCard}>
+                        <div className="metric-card tint-b">
                             <PackageCheck size={18} />
                             <div>
-                                <p style={styles.metricLabel}>Orders</p>
-                                <p style={styles.metricValue}>{metrics.ordersCount}</p>
+                                <p>Orders</p>
+                                <h3>{metrics.ordersCount}</h3>
                             </div>
                         </div>
-                        <div style={styles.metricCard}>
+                        <div className="metric-card tint-c">
                             <Activity size={18} />
                             <div>
-                                <p style={styles.metricLabel}>Recipes Cooked</p>
-                                <p style={styles.metricValue}>{metrics.cookedCount}</p>
+                                <p>Recipes Cooked</p>
+                                <h3>{metrics.cookedCount}</h3>
                             </div>
                         </div>
-                        <div style={styles.metricCard}>
+                        <div className="metric-card tint-d">
                             <Flame size={18} />
                             <div>
-                                <p style={styles.metricLabel}>Calories Today</p>
-                                <p style={styles.metricValue}>{metrics.caloriesToday}</p>
+                                <p>Streak</p>
+                                <h3>{metrics.streak} days</h3>
                             </div>
                         </div>
-                        <div style={styles.metricCard}>
+                        <div className="metric-card tint-e">
                             <Activity size={18} />
                             <div>
-                                <p style={styles.metricLabel}>Today Score</p>
-                                <p style={styles.metricValue}>{Math.round(metrics.todayScore)}</p>
+                                <p>Level</p>
+                                <h3>L{metrics.level}</h3>
                             </div>
                         </div>
-                        <div style={styles.metricCard}>
+                        <div className="metric-card tint-f">
                             <Activity size={18} />
                             <div>
-                                <p style={styles.metricLabel}>Weekly Avg</p>
-                                <p style={styles.metricValue}>{Math.round(metrics.weeklyScore)}</p>
+                                <p>Points</p>
+                                <h3>{metrics.points}</h3>
                             </div>
                         </div>
-                        <div style={styles.metricCard}>
-                            <Activity size={18} />
-                            <div>
-                                <p style={styles.metricLabel}>Level / Points</p>
-                                <p style={styles.metricValue}>L{metrics.level} · {metrics.points}</p>
-                            </div>
-                        </div>
-                        <div style={styles.metricCard}>
-                            <Activity size={18} />
-                            <div>
-                                <p style={styles.metricLabel}>Streak</p>
-                                <p style={styles.metricValue}>{metrics.streak} days</p>
-                            </div>
-                        </div>
-                    </div>
+                    </section>
 
-                    <div style={styles.usageCard}>
-                        <h3 style={styles.usageTitle}>Usage Snapshot</h3>
-                        <div style={styles.usageRow}>
-                            <span>Inventory tracked</span>
-                            <span>{metrics.pantryCount} ingredients</span>
+                    <section className="split-grid fade-up">
+                        <div className="activity-card card">
+                            <h3>Usage Snapshot</h3>
+                            <div className="usage-row">
+                                <span>Inventory tracked</span>
+                                <span>{metrics.pantryCount} ingredients</span>
+                            </div>
+                            <div className="usage-row">
+                                <span>Last cooked</span>
+                                <span>{metrics.lastCookedText}</span>
+                            </div>
+                            <div className="usage-row">
+                                <span>Orders in progress</span>
+                                <span>{metrics.ordersCount}</span>
+                            </div>
+                            <div className="usage-list">
+                                {usage.length === 0 ? (
+                                    <p className="muted">Cook a recipe to see usage trends here.</p>
+                                ) : (
+                                    usage.map((item) => {
+                                        const pct = Math.min(
+                                            100,
+                                            Math.round((Number(item.quantity || 0) / maxUsage) * 100)
+                                        );
+                                        return (
+                                            <div key={item.id} className="usage-item">
+                                                <span>{item.ingredient_name || 'Ingredient'}</span>
+                                                <div className="usage-bar">
+                                                    <div style={{ width: `${pct}%` }} />
+                                                </div>
+                                                <span className="usage-val">
+                                                    {Math.round(Number(item.quantity || 0))} {item.unit || ''}
+                                                </span>
+                                            </div>
+                                        );
+                                    })
+                                )}
+                            </div>
                         </div>
-                        <div style={styles.usageRow}>
-                            <span>Last cooked</span>
-                            <span>{metrics.lastCookedText}</span>
-                        </div>
-                        <div style={styles.usageRow}>
-                            <span>Orders in progress</span>
-                            <span>{metrics.ordersCount}</span>
-                        </div>
-                    </div>
 
-                    <div style={styles.charts}>
-                        <div style={styles.chartCard}>
-                            <h3 style={styles.chartTitle}>Goal Progress</h3>
+                        <div className="nutrition-card card">
+                            <h3>Nutrition Goals</h3>
                             {macroBars.map((bar) => {
-                                const pct = Math.min(100, Math.round((Number(bar.value || 0) / Math.max(Number(bar.goal || 1), 1)) * 100));
+                                const pct = Math.min(
+                                    100,
+                                    Math.round((Number(bar.value || 0) / Math.max(Number(bar.goal || 1), 1)) * 100)
+                                );
                                 return (
-                                    <div key={bar.label} style={styles.barRow}>
-                                        <div style={styles.barLabel}>
+                                    <div key={bar.label} className="bar-row">
+                                        <div className="bar-label">
                                             <span>{bar.label}</span>
-                                            <span>{Math.round(bar.value)} / {bar.goal}</span>
+                                            <span>
+                                                {Math.round(bar.value)} / {bar.goal}
+                                            </span>
                                         </div>
-                                        <div style={styles.barTrack}>
-                                            <div style={{ ...styles.barFill, width: `${pct}%`, background: bar.color }}></div>
+                                        <div className="bar-track">
+                                            <div style={{ width: `${pct}%`, background: bar.color }} />
                                         </div>
                                     </div>
                                 );
                             })}
                         </div>
-                        <div style={styles.chartCard}>
-                            <h3 style={styles.chartTitle}>Top Used Ingredients</h3>
-                            {usage.length === 0 ? (
-                                <p style={styles.chartEmpty}>Cook a recipe to see usage trends here.</p>
-                            ) : (
-                                usage.map((item) => {
-                                    const pct = Math.min(100, Math.round((Number(item.quantity || 0) / maxUsage) * 100));
-                                    return (
-                                        <div key={item.id} style={styles.barRow}>
-                                            <div style={styles.barLabel}>
-                                                <span>{item.ingredient_name || 'Ingredient'}</span>
-                                                <span>{Math.round(Number(item.quantity || 0))} {item.unit || ''}</span>
-                                            </div>
-                                            <div style={styles.barTrack}>
-                                            <div style={{ ...styles.barFill, width: `${pct}%`, background: 'var(--color-primary)' }}></div>
-                                            </div>
-                                        </div>
-                                    );
-                                })
-                            )}
-                        </div>
-                    </div>
-                    <div style={styles.profileCard}>
-                        <h3 style={styles.chartTitle}>Complete Profile</h3>
-                        <div style={styles.profileForm}>
-                            <label style={styles.label}>Mobile Number</label>
-                            <input
-                                style={styles.input}
-                                value={profileForm.mobile_number}
-                                onChange={(e) => setProfileForm((prev) => ({ ...prev, mobile_number: e.target.value }))}
-                                placeholder="Enter mobile number"
-                            />
-                            <label style={styles.label}>Address</label>
-                            <input
-                                style={styles.input}
-                                value={profileForm.address}
-                                onChange={(e) => setProfileForm((prev) => ({ ...prev, address: e.target.value }))}
-                                placeholder="Street / Address"
-                            />
-                            <label style={styles.label}>Location</label>
-                            <input
-                                style={styles.input}
-                                value={profileForm.location}
-                                onChange={(e) => setProfileForm((prev) => ({ ...prev, location: e.target.value }))}
-                                placeholder="City / Area"
-                            />
-                            <button style={styles.saveBtn} onClick={handleProfileSave} disabled={savingProfile}>
-                                {savingProfile ? 'Saving...' : 'Save Profile'}
-                            </button>
-                        </div>
-                    </div>
+                    </section>
+                </main>
 
-                    <div style={styles.notificationsCard}>
-                        <div style={styles.notificationsHeader}>
-                            <h3 style={styles.chartTitle}><Bell size={18} /> Notifications</h3>
-                            <button style={styles.markAllBtn} onClick={handleMarkAllRead}>
-                                Mark all read
+                
+            </div>
+
+            {showProfileEditor && (
+                <div className="modal-overlay">
+                    <div className="modal">
+                        <div className="modal-header">
+                            <h3>Edit Profile</h3>
+                            <button className="close-btn" onClick={() => setShowProfileEditor(false)}>
+                                <X size={16} />
                             </button>
                         </div>
-                        {notifError && <div style={styles.notifError}>{notifError}</div>}
-                        {notifLoading ? (
-                            <div style={styles.notifLoading}>Loading notifications...</div>
-                        ) : notifications.length === 0 ? (
-                            <div style={styles.notifEmpty}>You're all caught up.</div>
-                        ) : (
-                            <div style={styles.notifList}>
-                                {notifications.map((n) => (
-                                    <div key={n.id} style={{ ...styles.notifItem, opacity: n.is_read ? 0.6 : 1 }}>
-                                        <div>
-                                            <div style={styles.notifTitle}>{n.title}</div>
-                                            <div style={styles.notifMessage}>{n.message}</div>
-                                            <div style={styles.notifMeta}>{new Date(n.created_at).toLocaleString()}</div>
-                                        </div>
-                                        {!n.is_read && (
-                                            <button style={styles.notifBtn} onClick={() => handleMarkRead(n.id)}>
-                                                Mark read
-                                            </button>
-                                        )}
-                                    </div>
-                                ))}
+
+                        <div className="modal-body">
+                            <div className="upload-card">
+                                <div className="upload-preview">
+                                    {profileImageFile ? (
+                                        <img src={URL.createObjectURL(profileImageFile)} alt="Preview" />
+                                    ) : profileImageSrc ? (
+                                        <img src={profileImageSrc} alt="Profile" />
+                                    ) : (
+                                        <User size={32} />
+                                    )}
+                                </div>
+                                <div>
+                                    <div className="upload-title">Profile photo</div>
+                                    <div className="upload-hint">JPG, PNG. Up to 5MB.</div>
+                                    <label className="upload-btn">
+                                        <input
+                                            type="file"
+                                            accept="image/*"
+                                            onChange={(e) => setProfileImageFile(e.target.files?.[0] || null)}
+                                        />
+                                        {profileImageFile ? 'Change photo' : 'Upload photo'}
+                                    </label>
+                                </div>
                             </div>
-                        )}
+
+                            <div className="form-grid">
+                                <div>
+                                    <label>Name</label>
+                                    <input
+                                        value={profileForm.name}
+                                        onChange={(e) => setProfileForm((prev) => ({ ...prev, name: e.target.value }))}
+                                        placeholder="Enter your name"
+                                    />
+                                </div>
+                                <div>
+                                    <label>Email</label>
+                                    <div className="readonly">{user.email}</div>
+                                </div>
+                                <div>
+                                    <label>Role</label>
+                                    <div className="readonly">{user.role}</div>
+                                </div>
+                                <div>
+                                    <label>Mobile Number</label>
+                                    <input
+                                        value={profileForm.mobile_number}
+                                        onChange={(e) => setProfileForm((prev) => ({ ...prev, mobile_number: e.target.value }))}
+                                        placeholder="Enter mobile number"
+                                    />
+                                </div>
+                                <div>
+                                    <label>Location</label>
+                                    <input
+                                        value={profileForm.location}
+                                        onChange={(e) => setProfileForm((prev) => ({ ...prev, location: e.target.value }))}
+                                        placeholder="City / Area"
+                                    />
+                                </div>
+                                <div className="full">
+                                    <label>Address</label>
+                                    <input
+                                        value={profileForm.address}
+                                        onChange={(e) => setProfileForm((prev) => ({ ...prev, address: e.target.value }))}
+                                        placeholder="Street / Address"
+                                    />
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="modal-footer">
+                            <button className="btn-secondary" onClick={() => setShowProfileEditor(false)}>
+                                Cancel
+                            </button>
+                            <button className="btn-primary" onClick={handleProfileSave} disabled={savingProfile}>
+                                {savingProfile ? 'Saving...' : 'Save Changes'}
+                            </button>
+                        </div>
                     </div>
                 </div>
-            </div>
+            )}
         </div>
     );
-};
-
-const styles = {
-    page: { width: '100%', margin: 0, padding: '2rem 2.5rem' },
-    alert: { background: 'rgba(225,29,46,0.1)', color: 'var(--color-primary)', border: '1px solid rgba(225,29,46,0.2)', padding: '12px 16px', borderRadius: '12px', marginBottom: '1.5rem', fontWeight: '600' },
-    grid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1.5rem' },
-    card: { background: 'var(--color-surface)', borderRadius: '20px', boxShadow: 'var(--shadow-md)', overflow: 'hidden', border: '1px solid var(--color-border)' },
-    header: { background: '#f6f1e7', padding: '3rem 2rem', textAlign: 'center', color: 'var(--color-text)' },
-    avatar: { width: '80px', height: '80px', background: 'rgba(225,29,46,0.18)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1rem' },
-    name: { fontSize: '1.8rem', fontWeight: 'bold', marginBottom: '0.5rem' },
-    roleBadge: { background: 'rgba(225,29,46,0.15)', color: 'var(--color-accent)', padding: '4px 12px', borderRadius: '20px', fontSize: '0.9rem', textTransform: 'capitalize' },
-    details: { padding: '2rem' },
-    row: { display: 'flex', alignItems: 'center', gap: '1.5rem', marginBottom: '2rem', borderBottom: '1px solid var(--color-border)', paddingBottom: '1rem' },
-    icon: { color: 'var(--color-primary)' },
-    label: { fontSize: '0.85rem', color: 'var(--color-text-light)', marginBottom: '4px', display: 'block' },
-    value: { fontSize: '1.1rem', fontWeight: '500', color: 'var(--color-text)' },
-    ordersBtn: { marginTop: '0.5rem', background: 'var(--color-primary)', color: '#ffffff', border: 'none', padding: '10px 14px', borderRadius: '10px', fontWeight: '700', display: 'inline-flex', alignItems: 'center', gap: '8px', cursor: 'pointer' },
-    dashboard: { background: 'var(--color-surface)', borderRadius: '20px', border: '1px solid var(--color-border)', padding: '2rem', boxShadow: 'var(--shadow-md)' },
-    dashboardTitle: { fontSize: '1.6rem', marginBottom: '1.5rem' },
-    metrics: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem', marginBottom: '1.5rem' },
-    metricCard: { display: 'flex', alignItems: 'center', gap: '0.8rem', background: 'var(--color-surface-2)', padding: '0.9rem', borderRadius: '14px', border: '1px solid var(--color-border)' },
-    metricLabel: { fontSize: '0.85rem', color: 'var(--color-text-light)' },
-    metricValue: { fontSize: '1.2rem', fontWeight: '700' },
-    usageCard: { background: 'var(--color-surface-2)', borderRadius: '16px', padding: '1rem', border: '1px solid var(--color-border)' },
-    usageTitle: { fontSize: '1.1rem', marginBottom: '0.8rem' },
-    usageRow: { display: 'flex', justifyContent: 'space-between', color: 'var(--color-text-light)', marginBottom: '0.4rem' },
-    charts: { marginTop: '1.5rem', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '1rem' },
-    chartCard: { background: 'var(--color-surface)', borderRadius: '16px', padding: '1rem', border: '1px solid var(--color-border)', boxShadow: 'var(--shadow-sm)' },
-    chartTitle: { fontSize: '1.05rem', marginBottom: '0.8rem' },
-    barRow: { marginBottom: '0.8rem' },
-    barLabel: { display: 'flex', justifyContent: 'space-between', color: 'var(--color-text-light)', fontSize: '0.85rem', marginBottom: '0.3rem' },
-    barTrack: { background: 'var(--color-surface-2)', borderRadius: '999px', height: '8px', overflow: 'hidden', border: '1px solid var(--color-border)' },
-    barFill: { height: '100%', borderRadius: '999px' },
-    chartEmpty: { color: 'var(--color-text-light)', fontSize: '0.9rem' },
-    profileCard: { marginTop: '1.5rem', background: 'var(--color-surface-2)', borderRadius: '16px', padding: '1rem', border: '1px solid var(--color-border)' },
-    profileForm: { display: 'flex', flexDirection: 'column', gap: '0.6rem' },
-    input: { padding: '10px 12px', borderRadius: '10px', border: '1px solid var(--color-border)', background: '#fff' },
-    saveBtn: { marginTop: '0.6rem', background: 'var(--color-primary)', color: '#fff', border: 'none', padding: '10px 14px', borderRadius: '10px', fontWeight: '700', cursor: 'pointer' },
-    notificationsCard: { marginTop: '1.5rem', background: 'var(--color-surface)', borderRadius: '16px', padding: '1.2rem', border: '1px solid var(--color-border)' },
-    notificationsHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.8rem', gap: '0.8rem' },
-    markAllBtn: { background: 'transparent', border: '1px solid var(--color-border)', padding: '6px 10px', borderRadius: '999px', cursor: 'pointer', fontSize: '0.85rem' },
-    notifList: { display: 'flex', flexDirection: 'column', gap: '0.8rem' },
-    notifItem: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', padding: '0.9rem', borderRadius: '12px', border: '1px solid var(--color-border)', background: 'var(--color-surface-2)' },
-    notifTitle: { fontWeight: '700', marginBottom: '0.2rem' },
-    notifMessage: { color: 'var(--color-text-light)' },
-    notifMeta: { fontSize: '0.75rem', color: 'var(--color-text-light)', marginTop: '0.2rem' },
-    notifBtn: { background: 'var(--color-primary)', color: '#fff', border: 'none', padding: '6px 10px', borderRadius: '999px', cursor: 'pointer', fontSize: '0.85rem' },
-    notifLoading: { color: 'var(--color-text-light)' },
-    notifEmpty: { color: 'var(--color-text-light)' },
-    notifError: { background: 'rgba(239,68,68,0.12)', color: '#ef4444', padding: '6px 10px', borderRadius: '8px', border: '1px solid rgba(239,68,68,0.2)' },
 };
 
 export default Profile;

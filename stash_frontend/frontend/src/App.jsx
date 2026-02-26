@@ -18,6 +18,7 @@ import RecipeDetail from './pages/RecipeDetail';
 import Orders from './pages/Orders';
 import Payment from './pages/Payment';
 import Cook from './pages/Cook';
+import Notifications from './pages/Notifications';
 import './styles/global.css';
 
 function App() {
@@ -39,6 +40,7 @@ function App() {
             <Route path="/customer/shop" element={<Shop />} />
             <Route path="/customer/cart" element={<Cart />} />
             <Route path="/customer/account" element={<Profile />} />
+            <Route path="/customer/notifications" element={<Notifications />} />
             <Route path="/customer/orders" element={<Orders />} />
             <Route path="/customer/payment/:id" element={<Payment />} />
           </Route>

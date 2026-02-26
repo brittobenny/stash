@@ -417,7 +417,7 @@ const styles = {
     ctaButton: {
         padding: '18px 40px',
         fontSize: '1.2rem',
-        backgroundColor: 'var(--color-accent)',
+        backgroundColor: 'var(--color-primary)',
     },
     heroActions: {
         display: 'flex',

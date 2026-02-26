@@ -62,7 +62,17 @@ export const authService = {
 
 export const accountService = {
     getProfile: () => api.get('/accounts/profile/'),
-    updateProfile: (payload) => api.patch('/accounts/profile/', payload),
+    updateProfile: (payload) => {
+        const formData = new FormData();
+        if (payload && typeof payload === 'object') {
+            Object.entries(payload).forEach(([key, value]) => {
+                if (value !== undefined && value !== null) {
+                    formData.append(key, value);
+                }
+            });
+        }
+        return api.patch('/accounts/profile/', formData);
+    },
     getNotifications: (params = {}) => api.get('/accounts/notifications/', { params }),
     markNotificationRead: (id) => api.post(`/accounts/notifications/${id}/`),
     markAllNotificationsRead: () => api.post('/accounts/notifications/all/'),
@@ -89,15 +99,20 @@ export const nutritionService = {
 };
 
 export const recipeService = {
-    getRecommendations: (ingredients = null) => {
+    getRecommendations: (ingredients = null, options = {}) => {
+        const top_k = Math.min(10, Math.max(1, Number(options.top_k || 10)));
+        const min_match_percent = Number(options.min_match_percent ?? 25);
         if (Array.isArray(ingredients) && ingredients.length > 0) {
-            return api.post('/recommend/', { ingredients });
+            return api.post('/recommend/', { ingredients, top_k, min_match_percent });
         }
-        return api.get('/recommend/');
+        return api.get('/recommend/', { params: { top_k, min_match_percent } });
     },
-    getRecipeDetail: (recipeId) => api.get(`/recipes/${recipeId}/`),
-    cookRecipe: (recipeId, allowPartial = false, ingredients = null) =>
-        api.post('/cook/', { recipe_id: recipeId, allow_partial: allowPartial, ingredients }),
+    getRecipeDetail: (recipeId, scale = 1) => {
+        const params = scale && scale !== 1 ? { scale } : {};
+        return api.get(`/recipes/${recipeId}/`, { params });
+    },
+    cookRecipe: (recipeId, allowPartial = false, ingredients = null, scale = 1) =>
+        api.post('/cook/', { recipe_id: recipeId, allow_partial: allowPartial, ingredients, scale }),
 };
 
 export const shopService = {
@@ -131,6 +146,8 @@ export const shopOwnerService = {
     },
     listOrders: (params = {}) => api.get('/shop/owner/orders/', { params }),
     updateOrderStatus: (orderId, status) => api.post(`/shop/owner/orders/${orderId}/status/`, { status }),
+    getAnalytics: (params = {}) => api.get('/shop/owner/analytics/', { params }),
+    exportAnalytics: (params = {}) => api.get('/shop/owner/analytics/export/', { params, responseType: 'blob' }),
 };
 
 export const adminService = {
@@ -138,7 +155,6 @@ export const adminService = {
     listUsers: () => api.get('/accounts/admin/users/'),
     listShops: () => api.get('/accounts/admin/users/?role=shopowner'),
     listOrders: (params = {}) => api.get('/shop/admin/orders/', { params }),
-    updateOrderStatus: (orderId, status) => api.post(`/shop/admin/orders/${orderId}/status/`, { status }),
 };
 
 export default api;

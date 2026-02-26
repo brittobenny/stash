@@ -37,15 +37,21 @@ const Pantry = () => {
         const prevSize = document.body.style.backgroundSize;
         const prevRepeat = document.body.style.backgroundRepeat;
         const prevColor = document.body.style.backgroundColor;
-        document.body.style.backgroundImage = `linear-gradient(rgba(245,246,251,0.82), rgba(245,246,251,0.82)), url(${doodleBackground})`;
-        document.body.style.backgroundSize = 'auto, 720px';
+        const prevAttachment = document.body.style.backgroundAttachment;
+        const prevPosition = document.body.style.backgroundPosition;
+        document.body.style.backgroundImage = `linear-gradient(rgba(245,246,251,0.6), rgba(245,246,251,0.6)), url(${doodleBackground})`;
+        document.body.style.backgroundSize = 'auto, 500px';
         document.body.style.backgroundRepeat = 'repeat, repeat';
+        document.body.style.backgroundAttachment = 'fixed, fixed';
+        document.body.style.backgroundPosition = 'center, center';
         document.body.style.backgroundColor = '#f5f6fb';
         return () => {
             document.body.style.backgroundImage = prevBg;
             document.body.style.backgroundSize = prevSize;
             document.body.style.backgroundRepeat = prevRepeat;
             document.body.style.backgroundColor = prevColor;
+            document.body.style.backgroundAttachment = prevAttachment;
+            document.body.style.backgroundPosition = prevPosition;
         };
     }, []);
 

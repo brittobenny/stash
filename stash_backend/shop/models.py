@@ -42,6 +42,7 @@ class Product(models.Model):
 
     # stock is in "number of product units" (same as cart quantity)
     stock_quantity = models.PositiveIntegerField(default=0)
+    low_stock_threshold = models.PositiveIntegerField(default=10)
 
     # UI/display unit (optional). Real pantry add is decided by pack_size/pack_unit below.
     unit = models.CharField(max_length=10, choices=UNIT_CHOICES, default="pcs")

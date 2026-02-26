@@ -4,6 +4,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.parsers import MultiPartParser, FormParser
 from django.contrib.auth import authenticate
 from rest_framework.authtoken.models import Token
 from .serializers import RegisterSerializer, ProfileSerializer, NotificationSerializer
@@ -96,6 +97,7 @@ class LoginView(APIView):
                 "mobile_number": profile.mobile_number,
                 "address": profile.address,
                 "location": profile.location,
+                "image": profile.image.url if profile.image else None,
                 "profile_completed": profile_completed,
             }
         }, status=status.HTTP_200_OK)
@@ -103,6 +105,7 @@ class LoginView(APIView):
 
 class ProfileView(APIView):
     permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
 
     def get(self, request):
         profile, _ = UserProfile.objects.get_or_create(

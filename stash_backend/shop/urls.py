@@ -18,8 +18,9 @@ from .views import (
     list_orders,
     owner_orders,
     owner_update_order_status,
+    owner_analytics,
+    owner_analytics_export,
     admin_orders,
-    admin_update_order_status,
 )
 
 urlpatterns = [
@@ -46,8 +47,9 @@ urlpatterns = [
     # shop owner orders
     path("owner/orders/", owner_orders),
     path("owner/orders/<int:order_id>/status/", owner_update_order_status),
+    path("owner/analytics/", owner_analytics),
+    path("owner/analytics/export/", owner_analytics_export),
 
     # admin orders
     path("admin/orders/", admin_orders),
-    path("admin/orders/<int:order_id>/status/", admin_update_order_status),
 ]

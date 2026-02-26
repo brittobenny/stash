@@ -34,19 +34,6 @@ const AdminDashboard = () => {
         fetchAdminData();
     }, [statusFilter]);
 
-    const handleUpdateStatus = async (orderId, status) => {
-        setLoading(true);
-        try {
-            await adminService.updateOrderStatus(orderId, status);
-            await fetchAdminData();
-        } catch (err) {
-            console.error(err);
-            alert('Failed to update status');
-        } finally {
-            setLoading(false);
-        }
-    };
-
     return (
         <div style={styles.page}>
             <header style={styles.header}>
@@ -109,7 +96,7 @@ const AdminDashboard = () => {
                                 <th style={styles.th}>Date</th>
                                 <th style={styles.th}>Total</th>
                                 <th style={styles.th}>Status</th>
-                                <th style={styles.th}>Action</th>
+                                <th style={styles.th}>Status</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -128,24 +115,6 @@ const AdminDashboard = () => {
                                             {order.status === 'DELIVERED' ? <CheckCircle size={14} /> : <Clock size={14} />}
                                             {order.status}
                                         </span>
-                                    </td>
-                                    <td style={styles.td}>
-                                        <div style={styles.rowActions}>
-                                            <select
-                                                style={styles.rowSelect}
-                                                defaultValue={order.status}
-                                                onChange={(e) => handleUpdateStatus(order.id, e.target.value)}
-                                                disabled={loading}
-                                            >
-                                                <option value="PLACED">Placed</option>
-                                                <option value="CONFIRMED">Confirmed</option>
-                                                <option value="OUT_FOR_DELIVERY">Out for delivery</option>
-                                                <option value="DELIVERED">Delivered</option>
-                                                <option value="COMPLETED">Completed</option>
-                                                <option value="CANCELLED">Cancelled</option>
-                                                <option value="REFUNDED">Refunded</option>
-                                            </select>
-                                        </div>
                                     </td>
                                 </tr>
                             ))}
@@ -227,10 +196,7 @@ const styles = {
     },
     btnSm: {
         fontSize: '0.85rem', padding: '8px 14px', background: 'var(--color-primary)', color: '#fff', borderRadius: '999px', border: 'none', cursor: 'pointer',
-    }
-    ,
-    rowActions: { display: 'flex', gap: '0.5rem', alignItems: 'center' },
-    rowSelect: { padding: '6px 10px', borderRadius: '999px', border: '1px solid var(--color-border)', background: '#fff', fontSize: '0.85rem' },
+    },
 };
 
 export default AdminDashboard;

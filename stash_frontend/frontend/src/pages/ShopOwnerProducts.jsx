@@ -8,6 +8,7 @@ const defaultForm = {
     category: '',
     price: '',
     stock_quantity: '',
+    low_stock_threshold: 10,
     unit: 'pcs',
     ingredient_id: '',
     pack_size: '',
@@ -79,6 +80,7 @@ const ShopOwnerProducts = () => {
             category: product.category || '',
             price: product.price || '',
             stock_quantity: product.stock_quantity ?? '',
+            low_stock_threshold: product.low_stock_threshold ?? 10,
             unit: product.unit || 'pcs',
             ingredient_id: product.ingredient_id || '',
             pack_size: product.pack_size || '',
@@ -156,6 +158,17 @@ const ShopOwnerProducts = () => {
                                 style={styles.input}
                                 value={form.stock_quantity}
                                 onChange={(e) => setForm({ ...form, stock_quantity: e.target.value })}
+                                required
+                            />
+                        </div>
+                        <div style={styles.formGroup}>
+                            <label>Low Stock Alert Threshold</label>
+                            <input
+                                type="number"
+                                style={styles.input}
+                                min="0"
+                                value={form.low_stock_threshold}
+                                onChange={(e) => setForm({ ...form, low_stock_threshold: e.target.value })}
                                 required
                             />
                         </div>
@@ -272,6 +285,7 @@ const ShopOwnerProducts = () => {
                                 <th style={styles.th}>Stock</th>
                                 <th style={styles.th}>Price</th>
                                 <th style={styles.th}>Pack</th>
+                                <th style={styles.th}>Alert</th>
                                 <th style={styles.th}>Actions</th>
                             </tr>
                         </thead>
@@ -286,6 +300,11 @@ const ShopOwnerProducts = () => {
                                     <td style={styles.td}>{p.stock_quantity}</td>
                                     <td style={styles.td}>${Number(p.price).toFixed(2)}</td>
                                     <td style={styles.td}>{p.pack_size} {p.pack_unit}</td>
+                                    <td style={styles.td}>
+                                        {Number(p.stock_quantity || 0) <= Number(p.low_stock_threshold || 0)
+                                            ? `Low (${p.low_stock_threshold})`
+                                            : `OK (${p.low_stock_threshold})`}
+                                    </td>
                                     <td style={styles.td}>
                                         <button style={styles.iconBtn} onClick={() => handleEdit(p)}><Edit size={16} /></button>
                                         <button style={{ ...styles.iconBtn, color: '#ef4444' }} onClick={() => handleDelete(p.id)}><Trash2 size={16} /></button>

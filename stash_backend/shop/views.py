@@ -1,6 +1,11 @@
+import csv
+from datetime import datetime, timedelta
+
 from django.db import transaction
-from django.db.models import F, Q
+from django.db.models import F, Q, Sum, Count, DecimalField, ExpressionWrapper, Value
+from django.db.models.functions import Coalesce, TruncDate
 from django.utils import timezone
+from django.http import HttpResponse
 
 from rest_framework import generics, permissions
 from rest_framework.parsers import MultiPartParser, FormParser
@@ -79,6 +84,114 @@ def convert_to_default_unit(amount: float, from_unit: str, ingredient_default_un
     if u != target:
         return None
     return float(amount)
+
+
+def _parse_date(value):
+    if not value:
+        return None
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").date()
+    except ValueError:
+        return None
+
+
+def _owner_analytics_payload(user, date_from, date_to):
+    zero_decimal = Value(0, output_field=DecimalField(max_digits=14, decimal_places=2))
+    revenue_expr = ExpressionWrapper(
+        F("quantity") * F("price_each"),
+        output_field=DecimalField(max_digits=14, decimal_places=2),
+    )
+
+    base_qs = OrderItem.objects.filter(
+        product__owner=user,
+        order__created_at__date__gte=date_from,
+        order__created_at__date__lte=date_to,
+    )
+    sold_qs = base_qs.exclude(order__status__in=["CANCELLED", "REFUNDED"])
+
+    summary = sold_qs.aggregate(
+        total_revenue=Coalesce(Sum(revenue_expr), zero_decimal),
+        total_items_sold=Coalesce(Sum("quantity"), Value(0)),
+        total_orders=Count("order", distinct=True),
+    )
+    total_revenue = float(summary.get("total_revenue") or 0)
+    total_items_sold = int(summary.get("total_items_sold") or 0)
+    total_orders = int(summary.get("total_orders") or 0)
+    avg_order_value = (total_revenue / total_orders) if total_orders else 0
+
+    delivered_orders = sold_qs.filter(order__status__in=["DELIVERED", "COMPLETED"]).values("order_id").distinct().count()
+
+    daily_rows = sold_qs.annotate(day=TruncDate("order__created_at")).values("day").annotate(
+        revenue=Coalesce(Sum(revenue_expr), zero_decimal),
+        orders=Count("order", distinct=True),
+        items=Coalesce(Sum("quantity"), Value(0)),
+    ).order_by("day")
+
+    sales_by_day = [
+        {
+            "date": row["day"].isoformat() if row["day"] else "",
+            "revenue": float(row["revenue"] or 0),
+            "orders": int(row["orders"] or 0),
+            "items": int(row["items"] or 0),
+        }
+        for row in daily_rows
+    ]
+
+    top_rows = sold_qs.values("product_id", "product__name").annotate(
+        units_sold=Coalesce(Sum("quantity"), Value(0)),
+        revenue=Coalesce(Sum(revenue_expr), zero_decimal),
+    ).order_by("-units_sold", "-revenue")[:8]
+    product_map = {
+        p.id: p
+        for p in Product.objects.filter(owner=user).only("id", "stock_quantity", "low_stock_threshold")
+    }
+    top_products = []
+    for row in top_rows:
+        product_obj = product_map.get(row["product_id"])
+        stock_quantity = int(product_obj.stock_quantity) if product_obj else 0
+        low_stock_threshold = int(product_obj.low_stock_threshold) if product_obj else 0
+        top_products.append({
+            "product_id": row["product_id"],
+            "name": row["product__name"],
+            "units_sold": int(row["units_sold"] or 0),
+            "revenue": float(row["revenue"] or 0),
+            "stock_quantity": stock_quantity,
+            "low_stock_threshold": low_stock_threshold,
+            "low_stock": stock_quantity <= low_stock_threshold,
+        })
+
+    low_stock_qs = Product.objects.filter(
+        owner=user,
+        is_active=True,
+        stock_quantity__lte=F("low_stock_threshold"),
+    ).order_by("stock_quantity", "name")
+    low_stock_alerts = [
+        {
+            "product_id": p.id,
+            "name": p.name,
+            "stock_quantity": int(p.stock_quantity),
+            "low_stock_threshold": int(p.low_stock_threshold),
+            "is_out_of_stock": int(p.stock_quantity) == 0,
+        }
+        for p in low_stock_qs
+    ]
+    out_of_stock_count = sum(1 for x in low_stock_alerts if x["is_out_of_stock"])
+
+    return {
+        "date_range": {"from": date_from.isoformat(), "to": date_to.isoformat()},
+        "summary": {
+            "total_revenue": round(total_revenue, 2),
+            "total_items_sold": total_items_sold,
+            "total_orders": total_orders,
+            "avg_order_value": round(avg_order_value, 2),
+            "delivered_orders": int(delivered_orders),
+            "low_stock_count": len(low_stock_alerts),
+            "out_of_stock_count": out_of_stock_count,
+        },
+        "sales_by_day": sales_by_day,
+        "top_products": top_products,
+        "low_stock_alerts": low_stock_alerts,
+    }
 
 
 # ----------------------------
@@ -511,8 +624,89 @@ def owner_update_order_status(request, order_id):
     return Response(OrderSerializer(order).data)
 
 
+@api_view(["GET"])
+@permission_classes([IsShopOwner])
+def owner_analytics(request):
+    today = timezone.localdate()
+    default_from = today - timedelta(days=29)
+
+    date_from = _parse_date(request.query_params.get("date_from")) or default_from
+    date_to = _parse_date(request.query_params.get("date_to")) or today
+    if date_from > date_to:
+        return Response({"error": "date_from must be <= date_to"}, status=400)
+
+    payload = _owner_analytics_payload(request.user, date_from, date_to)
+    return Response(payload)
+
+
+@api_view(["GET"])
+@permission_classes([IsShopOwner])
+def owner_analytics_export(request):
+    today = timezone.localdate()
+    default_from = today - timedelta(days=29)
+
+    date_from = _parse_date(request.query_params.get("date_from")) or default_from
+    date_to = _parse_date(request.query_params.get("date_to")) or today
+    if date_from > date_to:
+        return Response({"error": "date_from must be <= date_to"}, status=400)
+
+    data = _owner_analytics_payload(request.user, date_from, date_to)
+
+    response = HttpResponse(content_type="text/csv")
+    response["Content-Disposition"] = f'attachment; filename="shop_owner_analytics_{date_from}_{date_to}.csv"'
+    writer = csv.writer(response)
+
+    summary = data["summary"]
+    writer.writerow(["Shop Owner Analytics"])
+    writer.writerow(["Date From", data["date_range"]["from"]])
+    writer.writerow(["Date To", data["date_range"]["to"]])
+    writer.writerow([])
+    writer.writerow(["Summary"])
+    writer.writerow(["Total Revenue", summary["total_revenue"]])
+    writer.writerow(["Total Orders", summary["total_orders"]])
+    writer.writerow(["Items Sold", summary["total_items_sold"]])
+    writer.writerow(["Avg Order Value", summary["avg_order_value"]])
+    writer.writerow(["Delivered Orders", summary["delivered_orders"]])
+    writer.writerow(["Low Stock Count", summary["low_stock_count"]])
+    writer.writerow(["Out Of Stock Count", summary["out_of_stock_count"]])
+    writer.writerow([])
+
+    writer.writerow(["Sales by Day"])
+    writer.writerow(["Date", "Revenue", "Orders", "Items"])
+    for row in data["sales_by_day"]:
+        writer.writerow([row["date"], row["revenue"], row["orders"], row["items"]])
+    writer.writerow([])
+
+    writer.writerow(["Top Products"])
+    writer.writerow(["Product ID", "Name", "Units Sold", "Revenue", "Stock", "Low Stock Threshold", "Low Stock"])
+    for row in data["top_products"]:
+        writer.writerow([
+            row["product_id"],
+            row["name"],
+            row["units_sold"],
+            row["revenue"],
+            row["stock_quantity"],
+            row["low_stock_threshold"],
+            "YES" if row["low_stock"] else "NO",
+        ])
+    writer.writerow([])
+
+    writer.writerow(["Low Stock Alerts"])
+    writer.writerow(["Product ID", "Name", "Stock", "Threshold", "Out Of Stock"])
+    for row in data["low_stock_alerts"]:
+        writer.writerow([
+            row["product_id"],
+            row["name"],
+            row["stock_quantity"],
+            row["low_stock_threshold"],
+            "YES" if row["is_out_of_stock"] else "NO",
+        ])
+
+    return response
+
+
 # ----------------------------
-# ADMIN ORDER APIs
+# ADMIN ORDER APIs (read-only)
 # ----------------------------
 @api_view(["GET"])
 @permission_classes([IsAdmin])
@@ -529,44 +723,3 @@ def admin_orders(request):
         else:
             orders = orders.filter(Q(user__email__icontains=q) | Q(user__username__icontains=q))
     return Response(OrderSerializer(orders, many=True).data)
-
-
-@api_view(["POST"])
-@permission_classes([IsAdmin])
-def admin_update_order_status(request, order_id):
-    new_status = request.data.get("status")
-    allowed = {"PLACED", "CONFIRMED", "OUT_FOR_DELIVERY", "DELIVERED", "COMPLETED", "CANCELLED", "REFUNDED"}
-    if new_status not in allowed:
-        return Response({"error": "Invalid status"}, status=400)
-
-    order = Order.objects.filter(id=order_id).first()
-    if not order:
-        return Response({"error": "Order not found"}, status=404)
-
-    previous_status = order.status
-    order.status = new_status
-    if new_status == "DELIVERED":
-        order.delivered_at = timezone.now()
-        order.needs_pantry_confirm = True
-    if new_status == "CANCELLED":
-        order.cancelled_at = timezone.now()
-        if previous_status not in {"CANCELLED", "REFUNDED"}:
-            for oi in OrderItem.objects.filter(order=order):
-                Product.objects.filter(id=oi.product_id).update(stock_quantity=F("stock_quantity") + oi.quantity)
-    if new_status == "REFUNDED":
-        order.refunded_at = timezone.now()
-        if previous_status not in {"CANCELLED", "REFUNDED"}:
-            for oi in OrderItem.objects.filter(order=order):
-                Product.objects.filter(id=oi.product_id).update(stock_quantity=F("stock_quantity") + oi.quantity)
-    if new_status in {"COMPLETED", "REFUNDED", "CANCELLED"}:
-        order.needs_pantry_confirm = False
-    order.save(update_fields=["status", "delivered_at", "needs_pantry_confirm", "cancelled_at", "refunded_at"])
-
-    _notify(
-        order.user,
-        f"Order {new_status.replace('_', ' ').title()}",
-        f"Your order #{order.id} is now {new_status.replace('_', ' ').lower()}.",
-        type="order",
-        data={"order_id": order.id, "status": order.status},
-    )
-    return Response(OrderSerializer(order).data)

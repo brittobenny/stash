@@ -213,8 +213,8 @@ const styles = {
         border: '1px solid rgba(229,72,72,0.2)'
     },
     success: {
-        background: 'rgba(225,29,46,0.15)',
-        color: 'var(--color-accent)',
+        background: 'rgba(34,197,94,0.12)',
+        color: '#15803d',
         padding: '12px',
         borderRadius: '12px',
         marginBottom: '1.5rem',
@@ -223,7 +223,7 @@ const styles = {
         gap: '8px',
         fontSize: '0.9rem',
         justifyContent: 'center',
-        border: '1px solid rgba(225,29,46,0.2)'
+        border: '1px solid rgba(34,197,94,0.25)'
     },
     footerText: {
         marginTop: '1.2rem',
