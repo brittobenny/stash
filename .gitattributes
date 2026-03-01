@@ -1,1 +1,2 @@
+*.pkl filter=lfs diff=lfs merge=lfs -text
 stash_backend/inventory/ml/hero_model.pkl filter=lfs diff=lfs merge=lfs -text
