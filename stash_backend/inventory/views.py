@@ -47,14 +47,11 @@ def _seed_ingredients_from_csv_if_empty() -> None:
     Load ingredient master data lazily when DB is empty.
     This keeps first-run environments working without a manual management command.
     """
-    if Ingredient.objects.exists():
-        return
-
     csv_path = Path(settings.BASE_DIR) / "data" / "ingredients_master.csv"
     if not csv_path.exists():
         return
 
-    rows = []
+    parsed_rows = []
     with open(csv_path, newline="", encoding="utf-8") as file:
         reader = csv.DictReader(file)
         for row in reader:
@@ -66,29 +63,65 @@ def _seed_ingredients_from_csv_if_empty() -> None:
             default_unit = (row.get("default_unit") or "grams").strip() or "grams"
             image_url = (row.get("image_url") or "").strip() or None
 
-            rows.append(
-                Ingredient(
-                    name=name,
-                    category=category,
-                    default_unit=default_unit,
-                    image_url=image_url,
-                )
+            parsed_rows.append(
+                {
+                    "name": name,
+                    "category": category,
+                    "default_unit": default_unit,
+                    "image_url": image_url,
+                }
             )
 
-    if not rows:
+    if not parsed_rows:
         return
 
-    with transaction.atomic():
-        # Re-check inside transaction to avoid duplicate work under concurrency.
-        if Ingredient.objects.exists():
-            return
-        Ingredient.objects.bulk_create(rows, ignore_conflicts=True)
+    embedding_lookup = {}
+    try:
+        from .ml.embedding_service import generate_embeddings
+
+        embedding_lookup = generate_embeddings([row["name"] for row in parsed_rows])
+    except Exception:
+        embedding_lookup = {}
+
+    rows = []
+    for row in parsed_rows:
+        rows.append(
+            Ingredient(
+                name=row["name"],
+                category=row["category"],
+                default_unit=row["default_unit"],
+                image_url=row["image_url"],
+                embedding=embedding_lookup.get((row["name"] or "").strip().lower()),
+            )
+        )
+
+    # Keep DB aligned with CSV without deleting user-linked rows.
+    Ingredient.objects.bulk_create(rows, ignore_conflicts=True)
+
+
+def _load_master_ingredient_names() -> set[str]:
+    csv_path = Path(settings.BASE_DIR) / "data" / "ingredients_master.csv"
+    if not csv_path.exists():
+        return set()
+
+    names = set()
+    with open(csv_path, newline="", encoding="utf-8") as file:
+        reader = csv.DictReader(file)
+        for row in reader:
+            name = (row.get("name") or "").strip()
+            if name:
+                names.add(name)
+    return names
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def list_ingredients(request):
     _seed_ingredients_from_csv_if_empty()
-    ingredients = Ingredient.objects.order_by("name").values('id', 'name', 'category', 'default_unit', 'image_url')
+    master_names = _load_master_ingredient_names()
+    ingredients_qs = Ingredient.objects.order_by("name")
+    if master_names:
+        ingredients_qs = ingredients_qs.filter(name__in=master_names)
+    ingredients = ingredients_qs.values('id', 'name', 'category', 'default_unit', 'image_url')
     return Response(list(ingredients))
 
 @api_view(["POST"])
@@ -229,21 +262,49 @@ def delete_inventory(request, pk):
 @api_view(["GET", "POST"])
 @permission_classes([IsAuthenticated])
 def recommend_meals(request):
+    pantry_items_qs = PantryItem.objects.select_related("ingredient").filter(user=request.user)
+    pantry_quantity_lookup = {}
+    for pantry_item in pantry_items_qs:
+        pantry_name = str(pantry_item.ingredient.name or "").strip().lower()
+        if not pantry_name:
+            continue
+        pantry_quantity_lookup[pantry_name] = pantry_quantity_lookup.get(pantry_name, 0.0) + float(pantry_item.quantity or 0.0)
 
     if request.method == "POST":
         selected = request.data.get("ingredients") or []
         if isinstance(selected, str):
             selected = [s.strip() for s in selected.split(",")]
-        ingredients = [str(item).lower() for item in selected if str(item).strip()]
+        pantry_payload = []
+        for item in selected:
+            if isinstance(item, dict):
+                name = str(item.get("name") or item.get("ingredient") or "").strip().lower()
+                if not name:
+                    continue
+                try:
+                    quantity = float(item.get("quantity", 1.0))
+                except (TypeError, ValueError):
+                    quantity = 0.0
+            else:
+                name = str(item).strip().lower()
+                if not name:
+                    continue
+                # For name-only selections from UI, use real pantry quantity.
+                # Fallback to 0.0 so strict hero quantity checks remain honest.
+                quantity = float(pantry_quantity_lookup.get(name, 0.0))
+            pantry_payload.append({"name": name, "quantity": max(quantity, 0.0)})
     else:
-        ingredients = []
+        pantry_payload = []
 
-    if not ingredients:
-        pantry_items = PantryItem.objects.filter(user=request.user)
-        ingredients = [
-            item.ingredient.name.lower()
-            for item in pantry_items
+    if not pantry_payload:
+        pantry_payload = [
+            {
+                "name": item.ingredient.name.lower(),
+                "quantity": float(item.quantity or 0.0),
+            }
+            for item in pantry_items_qs
         ]
+
+    ingredients = [item["name"] for item in pantry_payload]
 
     if request.method == "POST":
         top_k_raw = request.data.get("top_k", 10)
@@ -266,7 +327,7 @@ def recommend_meals(request):
 
     try:
         results = recommender.recommend(
-            ingredients,
+            pantry_payload,
             top_k=top_k,
             min_match_percent=min_match_percent,
         )
@@ -333,20 +394,40 @@ def normalize_name(name: str) -> str:
         "piece",
         "pieces",
         "pcs",
+        "pinch",
+        "pinches",
+        "dash",
+        "handful",
+        "bunch",
+        "sprig",
+        "sprigs",
     }
     for phrase in phrases_to_remove:
         n = re.sub(rf"\b{re.escape(phrase)}\b", " ", n)
     n = re.sub(r"[-_/]", " ", n)
 
     tokens = []
+    token_fixes = {
+        "tomatoes": "tomato",
+        "tomatoe": "tomato",
+        "chillie": "chilli",
+        "chillies": "chilli",
+        "chilie": "chilli",
+        "chilies": "chilli",
+        "reen": "green",
+        "inger": "ginger",
+        "arlic": "garlic",
+    }
     for token in re.split(r"\s+", n):
         t = token.strip()
         if not t or t in {"of", "and", "or", "to", "as", "for"}:
             continue
         if t in words_to_remove:
             continue
+        t = token_fixes.get(t, t)
         if t.endswith("s") and len(t) > 3:
             t = t[:-1]
+            t = token_fixes.get(t, t)
         if len(t) <= 1:
             continue
         tokens.append(t)
@@ -362,6 +443,9 @@ def normalize_name(name: str) -> str:
         "tbsp milk": "milk",
         "saltpepper": "salt",
         "salt pepper": "salt",
+        "table salt": "salt",
+        "sea salt": "salt",
+        "kosher salt": "salt",
         "su ar": "sugar",
         "spring onion": "green onion",
         "green onions": "green onion",
@@ -369,6 +453,11 @@ def normalize_name(name: str) -> str:
         "scallions": "green onion",
         "red chilli flakes": "chilli flakes",
         "red chili flakes": "chilli flakes",
+        "red chili": "red chilli",
+        "green chilie": "green chilli",
+        "green chilies": "green chilli",
+        "inger arlic": "ginger garlic",
+        "inger arlic paste": "ginger garlic paste",
     }
     return aliases.get(n, n)
 

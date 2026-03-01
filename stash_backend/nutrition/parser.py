@@ -63,7 +63,7 @@ def _clean_name(name: str) -> str:
 
     # remove common notes
     name = re.sub(
-        r"\b(or as needed|as needed|to taste|optional|for garnish|as required|required|finely chopped|thinly sliced|sliced|chopped)\b",
+        r"\b(or as needed|as needed|to taste|optional|for garnish|as required|required|finely chopped|thinly sliced|sliced|chopped|pinch|pinches|dash|sprig|sprigs|handful|bunch)\b",
         "",
         name,
     )
@@ -91,6 +91,17 @@ def _clean_name(name: str) -> str:
         "su ar": "sugar",
         "ye ast": "yeast",
         "ses ame": "sesame",
+        "tomatoe": "tomato",
+        "tomatoes": "tomato",
+        "chillie": "chilli",
+        "chillies": "chilli",
+        "chilie": "chilli",
+        "chilies": "chilli",
+        "green chillie": "green chilli",
+        "green chillies": "green chilli",
+        "green chilie": "green chilli",
+        "green chilies": "green chilli",
+        "inger arlic paste": "ginger garlic paste",
     }
     return aliases.get(name, name)
 
@@ -145,9 +156,13 @@ def parse_ingredient(text: str):
 
     raw = raw.replace("\u00a0", " ")
     raw = re.sub(r"\s+", " ", raw).strip()
+    # Handle malformed compact grams like "100gchicken" -> "100 g chicken".
+    raw = re.sub(r"(?<=\d)g(?=[a-z])", " g ", raw)
+
     # Handle malformed tokens like "tablespoonmilk" -> "tablespoon milk".
+    # Keep single-letter 'g' out of this pattern so words like "green" stay intact.
     raw = re.sub(
-        r"\b(teaspoons?|tsp|tablespoons?|tbsp|cups?|gram|grams|g|kg|ml|liter|liters|pieces?|piece|pcs|inch|inches|cm)(?=[a-z])",
+        r"\b(teaspoons?|tsp|tablespoons?|tbsp|cups?|gram|grams|kg|ml|liter|liters|pieces?|piece|pcs|inch|inches|cm)(?=[a-z])",
         r"\1 ",
         raw,
     )
@@ -166,7 +181,7 @@ def parse_ingredient(text: str):
 
     # 2) unit at start of remainder (includes inch/cm)
     unit_match = re.match(
-        r"^(teaspoons?|tsp|tablespoons?|tbsp|cups?|gram|grams|g|kg|ml|liter|liters|pieces?|piece|pcs|inch|inches|cm)\s*(.*)$",
+        r"^(teaspoons?|tsp|tablespoons?|tbsp|cups?|gram|grams|g|kg|ml|liter|liters|pieces?|piece|pcs|inch|inches|cm)(?:\s+|$)(.*)$",
         rest,
     )
 
