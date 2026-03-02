@@ -14,6 +14,10 @@ api.interceptors.request.use(
         if (token) {
             config.headers.Authorization = `Token ${token}`;
         }
+        if (config.data instanceof FormData) {
+            // Let the browser set the correct multipart boundary
+            delete config.headers['Content-Type'];
+        }
         return config;
     },
     (error) => Promise.reject(error)
@@ -155,6 +159,42 @@ export const adminService = {
     listUsers: () => api.get('/accounts/admin/users/'),
     listShops: () => api.get('/accounts/admin/users/?role=shopowner'),
     listOrders: (params = {}) => api.get('/shop/admin/orders/', { params }),
+};
+
+export const socialService = {
+    getFeed: (params = {}) => api.get('/social/feed/', { params }),
+    getMyPosts: () => api.get('/social/mine/'),
+    getPost: (postId) => api.get(`/social/posts/${postId}/`),
+    createPost: (payload) => {
+        const formData = new FormData();
+        if (payload && typeof payload === 'object') {
+            Object.entries(payload).forEach(([key, value]) => {
+                if (value !== undefined && value !== null) {
+                    formData.append(key, value);
+                }
+            });
+        }
+        return api.post('/social/posts/', formData);
+    },
+    updatePost: (postId, payload) => {
+        const formData = new FormData();
+        if (payload && typeof payload === 'object') {
+            Object.entries(payload).forEach(([key, value]) => {
+                if (value !== undefined && value !== null) {
+                    formData.append(key, value);
+                }
+            });
+        }
+        return api.patch(`/social/posts/${postId}/`, formData);
+    },
+    deletePost: (postId) => api.delete(`/social/posts/${postId}/`),
+    likePost: (postId) => api.post(`/social/posts/${postId}/like/`),
+    unlikePost: (postId) => api.delete(`/social/posts/${postId}/like/`),
+    listComments: (postId) => api.get(`/social/posts/${postId}/comments/`),
+    addComment: (postId, text) => api.post(`/social/posts/${postId}/comments/`, { text }),
+    approvePost: (postId) => api.post(`/social/posts/${postId}/approve/`),
+    rejectPost: (postId, reason = '') => api.post(`/social/posts/${postId}/reject/`, { reason }),
+    getReviewQueue: (status = 'ALL') => api.get('/social/review/', { params: { status } }),
 };
 
 export default api;

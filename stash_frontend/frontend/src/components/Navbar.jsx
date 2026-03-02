@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { Bell, LogOut, UserCircle } from 'lucide-react';
 import { accountService } from '../services/api';
+import { normalizeImagePath } from '../utils/normalize';
 import '../styles/global.css';
 
 const Navbar = () => {
@@ -24,8 +25,8 @@ const Navbar = () => {
             const rawUser = localStorage.getItem('user');
             if (rawUser) {
                 const parsed = JSON.parse(rawUser);
-                if (parsed?.image) {
-                    const img = String(parsed.image);
+                const img = normalizeImagePath(parsed?.image);
+                if (img) {
                     setProfileImage(img.startsWith('http') ? img : `http://127.0.0.1:8000${img}`);
                 } else {
                     setProfileImage(null);
@@ -69,6 +70,7 @@ const Navbar = () => {
                 <ul style={styles.links}>
                     {role === 'customer' && (
                         <>
+                            <li><Link to="/customer/home" style={{ ...styles.link, ...(isActive('/customer/home') ? styles.linkActive : {}) }}>Home</Link></li>
                             <li><Link to="/customer/inventory" style={{ ...styles.link, ...(isActive('/customer/inventory') ? styles.linkActive : {}) }}>Inventory</Link></li>
                             <li><Link to="/customer/cook" style={{ ...styles.link, ...(isActive('/customer/cook') ? styles.linkActive : {}) }}>Cook</Link></li>
                             <li><Link to="/customer/nutrition" style={{ ...styles.link, ...(isActive('/customer/nutrition') ? styles.linkActive : {}) }}>Nutrition</Link></li>

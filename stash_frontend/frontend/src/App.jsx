@@ -19,6 +19,8 @@ import Orders from './pages/Orders';
 import Payment from './pages/Payment';
 import Cook from './pages/Cook';
 import Notifications from './pages/Notifications';
+import SocialHome from './pages/SocialHome';
+import SocialRecipeDetail from './pages/SocialRecipeDetail';
 import './styles/global.css';
 
 function App() {
@@ -32,7 +34,9 @@ function App() {
         {/* Protected Routes (Wrapped in Layout) */}
         <Route element={<Layout />}>
           <Route element={<RequireAuth allowedRoles={['customer']} />}>
-            <Route path="customer" element={<Navigate to="/customer/inventory" replace />} />
+            <Route path="customer" element={<Navigate to="/customer/home" replace />} />
+            <Route path="/customer/home" element={<SocialHome />} />
+            <Route path="/customer/community/:id" element={<SocialRecipeDetail />} />
             <Route path="/customer/inventory" element={<Pantry />} />
             <Route path="/customer/cook" element={<Cook />} />
             <Route path="/customer/nutrition" element={<Nutrition />} />

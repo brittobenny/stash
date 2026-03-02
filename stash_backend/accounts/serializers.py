@@ -31,7 +31,7 @@ class RegisterSerializer(serializers.Serializer):
 
 
 class ProfileSerializer(serializers.ModelSerializer):
-    name = serializers.CharField(source="user.first_name", required=False, allow_blank=True)
+    name = serializers.CharField(source="user.first_name", read_only=True)
     email = serializers.EmailField(source="user.email", read_only=True)
 
     class Meta:

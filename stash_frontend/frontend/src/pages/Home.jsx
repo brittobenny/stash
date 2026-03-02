@@ -8,12 +8,12 @@ const Home = () => {
         const observer = new IntersectionObserver((entries) => {
             entries.forEach(entry => {
                 if (entry.isIntersecting) {
-                    entry.target.classList.add('show');
+                    entry.target.classList.add('reveal-show');
                 }
             });
         });
 
-        const hiddenElements = document.querySelectorAll('.hidden');
+        const hiddenElements = document.querySelectorAll('.reveal');
         hiddenElements.forEach((el) => observer.observe(el));
 
         return () => hiddenElements.forEach((el) => observer.unobserve(el));
@@ -105,14 +105,14 @@ const Home = () => {
                 </nav>
 
                 <div className="container" style={styles.heroContent}>
-                    <h1 className="hidden" style={styles.heroTitle}>
+                    <h1 className="reveal" style={styles.heroTitle}>
                         Smart Eating, <br />
                         <span style={{ color: 'var(--color-accent)' }}>Simplified.</span>
                     </h1>
-                    <p className="hidden" style={styles.heroSubtitle}>
+                    <p className="reveal" style={styles.heroSubtitle}>
                         Stash connects your pantry, local shops, and dietary goals into one seamless experience.
                     </p>
-                    <div className="hidden" style={styles.heroActions}>
+                    <div className="reveal" style={styles.heroActions}>
                         <Link to="/login" className="btn btn-primary" style={styles.ctaButton}>
                             Get Started <ArrowRight size={20} />
                         </Link>
@@ -154,7 +154,7 @@ const Home = () => {
 
             {/* SECTION 3: ABOUT STASH */}
             <section id="about" style={styles.aboutSection}>
-                <div className="container hidden" style={styles.aboutContent}>
+                <div className="container reveal" style={styles.aboutContent}>
                     <div style={styles.sectionHeader}>
                         <h2 style={styles.sectionTitle}>What is <span style={{ color: 'var(--color-accent)' }}>Stash</span>?</h2>
                         <div style={styles.underline}></div>
@@ -174,7 +174,7 @@ const Home = () => {
                     </div>
                     <div style={styles.howGrid}>
                         {steps.map((step, index) => (
-                            <div key={step.title} style={styles.howCard} className="hidden">
+                            <div key={step.title} style={styles.howCard} className="reveal">
                                 <div style={styles.stepIndex}>0{index + 1}</div>
                                 <h3>{step.title}</h3>
                                 <p>{step.description}</p>
@@ -189,19 +189,19 @@ const Home = () => {
                 <div className="container">
                     <div style={styles.featureGrid}>
                         {/* Feature 1 */}
-                        <div className="hidden" style={styles.featureCard}>
+                        <div className="reveal" style={styles.featureCard}>
                             <div style={styles.featureIcon}><Leaf size={32} /></div>
                             <h3>Smart Pantry</h3>
                             <p>Track your ingredients automatically. Know exactly what you have and when it expires.</p>
                         </div>
                         {/* Feature 2 */}
-                        <div className="hidden" style={styles.featureCard}>
+                        <div className="reveal" style={styles.featureCard}>
                             <div style={styles.featureIcon}><ChefHat size={32} /></div>
                             <h3>AI Recipes</h3>
                             <p>Get personalized meal ideas based on your pantry and dietary preferences.</p>
                         </div>
                         {/* Feature 3 */}
-                        <div className="hidden" style={styles.featureCard}>
+                        <div className="reveal" style={styles.featureCard}>
                             <div style={styles.featureIcon}><Smartphone size={32} /></div>
                             <h3>Seamless Shopping</h3>
                             <p>Order missing ingredients from local shops with a single click.</p>
@@ -213,7 +213,7 @@ const Home = () => {
             {/* SECTION 6: EXPERIENCE PREVIEW */}
             <section style={styles.previewSection}>
                 <div className="container" style={styles.previewGrid}>
-                    <div style={styles.previewCopy} className="hidden">
+                    <div style={styles.previewCopy} className="reveal">
                         <span style={styles.pill}><Activity size={16} /> Live pantry insights</span>
                         <h2 style={styles.previewTitle}>Your kitchen, organized and intelligent.</h2>
                         <p style={styles.sectionText}>
@@ -229,7 +229,7 @@ const Home = () => {
                             See your dashboard <ArrowRight size={18} />
                         </Link>
                     </div>
-                    <div style={styles.previewCard} className="hidden float-slow">
+                    <div style={styles.previewCard} className="reveal float-slow">
                         <div style={styles.previewHeader}>
                             <div>
                                 <h4 style={{ marginBottom: '0.2rem' }}>Today at a glance</h4>
@@ -314,7 +314,7 @@ const Home = () => {
                     </div>
                     <div style={styles.faqGrid}>
                         {faqs.map((item) => (
-                            <div key={item.q} style={styles.faqCard} className="hidden">
+                            <div key={item.q} style={styles.faqCard} className="reveal">
                                 <h4>{item.q}</h4>
                                 <p>{item.a}</p>
                             </div>
@@ -325,7 +325,7 @@ const Home = () => {
 
             {/* SECTION 8: CALL TO ACTION */}
             <section style={styles.ctaSection}>
-                <div className="hidden" style={{ textAlign: 'center' }}>
+                <div className="reveal" style={{ textAlign: 'center' }}>
                     <h2 style={{ fontSize: '2.5rem', marginBottom: '1.5rem' }}>Ready to upgrade your meals?</h2>
                     <Link to="/login" className="btn btn-primary" style={{ backgroundColor: 'var(--color-primary)', color: '#ffffff', padding: '16px 32px' }}>
                         Join Stash Now
@@ -796,8 +796,8 @@ if (!document.getElementById('home-page-animations')) {
     const styleSheet = document.createElement("style");
     styleSheet.id = 'home-page-animations';
     styleSheet.innerText = `
-      .hidden { opacity: 0; transform: translateY(30px); transition: all 0.9s ease; }
-      .show { opacity: 1; transform: translateY(0); }
+      .reveal { opacity: 0; transform: translateY(30px); transition: all 0.9s ease; }
+      .reveal-show { opacity: 1; transform: translateY(0); }
       .float-slow { animation: floatSlow 6s ease-in-out infinite; }
       .pulse-soft { animation: pulseSoft 3.5s ease-in-out infinite; }
       @keyframes floatSlow {

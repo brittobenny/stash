@@ -48,7 +48,8 @@ INSTALLED_APPS = [
     'recommendation',
     'nutrition',
     'shopping',
-    'shop'
+    'shop',
+    'social',
 ]
 
 

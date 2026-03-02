@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { User, Lock, ArrowRight, AlertCircle } from 'lucide-react';
 import { authService } from '../services/api';
+import { normalizeName, normalizeImagePath } from '../utils/normalize';
 import '../styles/global.css';
 
 const authBackground = '/api/auth-background/';
@@ -32,12 +33,17 @@ const Login = () => {
             const role = data.role || data.user?.role || 'customer';
             localStorage.setItem('role', role);
             if (data.user) {
-                localStorage.setItem('user', JSON.stringify(data.user));
+                const safeUser = {
+                    ...data.user,
+                    name: normalizeName(data.user.name),
+                    image: normalizeImagePath(data.user.image),
+                };
+                localStorage.setItem('user', JSON.stringify(safeUser));
             }
 
             if (role === 'shopowner') navigate('/shop-owner/dashboard');
             else if (role === 'admin') navigate('/admin');
-            else navigate('/customer');
+            else navigate('/customer/home');
 
         } catch (err) {
             console.error(err);

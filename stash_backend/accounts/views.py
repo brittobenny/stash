@@ -128,11 +128,19 @@ class ProfileView(APIView):
         if request.user.is_superuser and profile.role != "admin":
             profile.role = "admin"
             profile.save(update_fields=["role"])
-        serializer = ProfileSerializer(profile, data=request.data, partial=True)
+        data = request.data.copy()
+        name = data.pop("name", None)
+        serializer = ProfileSerializer(profile, data=data, partial=True)
         if serializer.is_valid():
-            name = request.data.get("name")
             if name is not None:
-                request.user.first_name = name
+                if isinstance(name, (list, tuple)):
+                    name_value = " ".join([str(n) for n in name if n]).strip()
+                else:
+                    name_value = str(name).strip()
+                if name_value.startswith("[") and name_value.endswith("]"):
+                    name_value = name_value[1:-1]
+                name_value = name_value.replace("\\", "").replace('"', "").replace("'", "").strip()
+                request.user.first_name = name_value
                 request.user.save(update_fields=["first_name"])
             serializer.save()
             data = serializer.data

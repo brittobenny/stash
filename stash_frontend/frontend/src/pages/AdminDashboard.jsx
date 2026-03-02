@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Users, Store, Activity, Truck, CheckCircle, Clock, AlertTriangle } from 'lucide-react';
-import { adminService } from '../services/api';
+import { Users, Store, Activity, CheckCircle, Clock, AlertTriangle, XCircle } from 'lucide-react';
+import { adminService, socialService } from '../services/api';
 
 const AdminDashboard = () => {
     const [orders, setOrders] = useState([]);
@@ -9,6 +9,9 @@ const AdminDashboard = () => {
     const [error, setError] = useState('');
     const [statusFilter, setStatusFilter] = useState('');
     const [users, setUsers] = useState([]);
+    const [reviewStatus, setReviewStatus] = useState('ALL');
+    const [pendingPosts, setPendingPosts] = useState([]);
+    const [reviewError, setReviewError] = useState('');
 
     const fetchAdminData = async () => {
         setLoading(true);
@@ -32,7 +35,43 @@ const AdminDashboard = () => {
 
     useEffect(() => {
         fetchAdminData();
-    }, [statusFilter]);
+    }, [statusFilter, reviewStatus]);
+
+    const loadReviewQueue = async () => {
+        setReviewError('');
+        try {
+            const reviewRes = await socialService.getReviewQueue(reviewStatus);
+            setPendingPosts(reviewRes.data || []);
+        } catch (err) {
+            setReviewError('Failed to load review queue.');
+            setPendingPosts([]);
+        }
+    };
+
+    useEffect(() => {
+        loadReviewQueue();
+    }, [reviewStatus]);
+
+    const handleReject = async (postId) => {
+        const reason = window.prompt('Reason for rejection (optional):', '');
+        try {
+            await socialService.rejectPost(postId, reason || '');
+            loadReviewQueue();
+        } catch (err) {
+            setError('Failed to reject post.');
+        }
+    };
+
+    const handleDelete = async (postId) => {
+        const ok = window.confirm('Delete this post permanently?');
+        if (!ok) return;
+        try {
+            await socialService.deletePost(postId);
+            loadReviewQueue();
+        } catch (err) {
+            setError('Failed to delete post.');
+        }
+    };
 
     return (
         <div style={styles.page}>
@@ -155,6 +194,61 @@ const AdminDashboard = () => {
                     </table>
                 </div>
             </section>
+
+            <section style={styles.section}>
+                <h2 style={styles.sectionTitle}>Recipe Post Monitor</h2>
+                {reviewError && <div style={styles.errorBanner}>{reviewError}</div>}
+                <div style={styles.filterRow}>
+                    <select
+                        value={reviewStatus}
+                        onChange={(e) => setReviewStatus(e.target.value)}
+                        style={styles.filterSelect}
+                    >
+                        <option value="ALL">All</option>
+                        <option value="APPROVED">Approved</option>
+                        <option value="REJECTED">Rejected</option>
+                        <option value="PENDING">Pending</option>
+                    </select>
+                </div>
+                <div style={styles.tableWrapper}>
+                    <table style={styles.table}>
+                        <thead>
+                            <tr>
+                                <th style={styles.th}>Title</th>
+                                <th style={styles.th}>Author</th>
+                                <th style={styles.th}>Status</th>
+                                <th style={styles.th}>Created</th>
+                                <th style={styles.th}>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {pendingPosts.map((post) => (
+                                <tr key={post.id}>
+                                    <td style={styles.td}>{post.title}</td>
+                                    <td style={styles.td}>{post.author_name || '--'}</td>
+                                    <td style={styles.td}>{post.status}</td>
+                                    <td style={styles.td}>{post.created_at?.slice(0, 10) || '--'}</td>
+                                    <td style={styles.td}>
+                                        <div style={{ display: 'flex', gap: '0.6rem' }}>
+                                            <button style={styles.btnReject} onClick={() => handleReject(post.id)}>
+                                                <XCircle size={14} /> Reject
+                                            </button>
+                                            <button style={styles.btnDelete} onClick={() => handleDelete(post.id)}>
+                                                Delete
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            ))}
+                            {pendingPosts.length === 0 && (
+                                <tr>
+                                    <td style={styles.td} colSpan={5}>No posts in this queue.</td>
+                                </tr>
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+            </section>
         </div>
     );
 };
@@ -196,6 +290,12 @@ const styles = {
     },
     btnSm: {
         fontSize: '0.85rem', padding: '8px 14px', background: 'var(--color-primary)', color: '#fff', borderRadius: '999px', border: 'none', cursor: 'pointer',
+    },
+    btnReject: {
+        fontSize: '0.85rem', padding: '8px 14px', background: 'rgba(239,68,68,0.12)', color: '#ef4444', borderRadius: '999px', border: '1px solid rgba(239,68,68,0.2)', cursor: 'pointer',
+    },
+    btnDelete: {
+        fontSize: '0.85rem', padding: '8px 14px', background: 'rgba(15,23,42,0.08)', color: '#111827', borderRadius: '999px', border: '1px solid rgba(15,23,42,0.2)', cursor: 'pointer',
     },
 };
 

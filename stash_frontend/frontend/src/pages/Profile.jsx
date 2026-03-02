@@ -15,6 +15,7 @@ import {
     Sparkles,
 } from 'lucide-react';
 import { pantryService, shopService, inventoryService, accountService, nutritionService } from '../services/api';
+import { normalizeName, normalizeImagePath } from '../utils/normalize';
 import '../styles/global.css';
 import '../styles/profile.css';
 
@@ -58,18 +59,20 @@ const Profile = () => {
             try {
                 const res = await accountService.getProfile();
                 const data = res.data || {};
+                const safeName = normalizeName(data.name);
+                const safeImage = normalizeImagePath(data.image);
                 setUser({
-                    name: data.name,
+                    name: safeName,
                     email: data.email,
                     mobile_number: data.mobile_number,
                     role: data.role,
                     address: data.address,
                     location: data.location,
-                    image: data.image,
+                    image: safeImage,
                 });
                 setProfileComplete(Boolean(data.profile_completed));
                 setProfileForm({
-                    name: data.name || '',
+                    name: safeName || '',
                     address: data.address || '',
                     location: data.location || '',
                     mobile_number: data.mobile_number || '',
@@ -77,23 +80,25 @@ const Profile = () => {
                 localStorage.setItem(
                     'user',
                     JSON.stringify({
-                        name: data.name,
+                        name: safeName,
                         email: data.email,
                         role: data.role,
                         mobile_number: data.mobile_number,
                         address: data.address,
                         location: data.location,
                         profile_completed: data.profile_completed,
-                        image: data.image,
+                        image: safeImage,
                     })
                 );
             } catch (err) {
                 const storedUser = localStorage.getItem('user');
                 if (storedUser) {
                     const parsed = JSON.parse(storedUser);
-                    setUser(parsed);
+                    const safeName = normalizeName(parsed.name);
+                    const safeImage = normalizeImagePath(parsed.image);
+                    setUser({ ...parsed, name: safeName || parsed.name, image: safeImage || parsed.image });
                     setProfileForm({
-                        name: parsed.name || '',
+                        name: safeName || '',
                         address: parsed.address || '',
                         location: parsed.location || '',
                         mobile_number: parsed.mobile_number || '',
@@ -196,24 +201,31 @@ const Profile = () => {
                 const refreshed = await accountService.getProfile();
                 const data = refreshed.data || {};
                 setUser((prev) => ({ ...prev, ...data }));
+                const safeName = normalizeName(data.name || profileForm.name || user?.name);
+                const safeImage = normalizeImagePath(data.image || user?.image);
                 setProfileForm({
-                    name: data.name || profileForm.name || '',
+                    name: safeName || '',
                     address: data.address || profileForm.address || '',
                     location: data.location || profileForm.location || '',
                     mobile_number: data.mobile_number || profileForm.mobile_number || '',
                 });
+                setUser((prev) => ({
+                    ...prev,
+                    name: safeName || prev?.name,
+                    image: safeImage || prev?.image,
+                }));
                 setProfileComplete(Boolean(data.profile_completed));
                 localStorage.setItem(
                     'user',
                     JSON.stringify({
-                        name: data.name || profileForm.name || user?.name,
+                        name: safeName || profileForm.name || user?.name,
                         email: data.email,
                         role: data.role,
                         mobile_number: data.mobile_number || profileForm.mobile_number,
                         address: data.address || profileForm.address,
                         location: data.location || profileForm.location,
                         profile_completed: data.profile_completed,
-                        image: data.image,
+                        image: safeImage || data.image,
                     })
                 );
                 setProfileImageFile(null);
@@ -230,10 +242,11 @@ const Profile = () => {
 
     if (!user) return <div className="profile-loading">Loading profile...</div>;
 
-    const profileImageSrc = user?.image
-        ? String(user.image).startsWith('http')
-            ? user.image
-            : `http://127.0.0.1:8000${user.image}`
+    const normalizedImage = normalizeImagePath(user?.image);
+    const profileImageSrc = normalizedImage
+        ? String(normalizedImage).startsWith('http')
+            ? normalizedImage
+            : `http://127.0.0.1:8000${normalizedImage}`
         : null;
 
     const completionScore = Math.round(
