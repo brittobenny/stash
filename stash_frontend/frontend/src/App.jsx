@@ -7,6 +7,9 @@ import ShopOwnerProducts from './pages/ShopOwnerProducts';
 import ShopOwnerOrders from './pages/ShopOwnerOrders';
 import ShopOwnerFeedback from './pages/ShopOwnerFeedback';
 import AdminDashboard from './pages/AdminDashboard';
+import AdminUsers from './pages/AdminUsers';
+import AdminShops from './pages/AdminShops';
+import AdminPosts from './pages/AdminPosts';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import Pantry from './pages/Pantry';
@@ -59,6 +62,9 @@ function App() {
 
           <Route element={<RequireAuth allowedRoles={['admin']} />}>
             <Route path="admin" element={<AdminDashboard />} />
+            <Route path="admin/users" element={<AdminUsers />} />
+            <Route path="admin/shops" element={<AdminShops />} />
+            <Route path="admin/posts" element={<AdminPosts />} />
           </Route>
         </Route>
       </Routes>

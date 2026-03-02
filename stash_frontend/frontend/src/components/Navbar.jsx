@@ -87,7 +87,12 @@ const Navbar = () => {
                         </>
                     )}
                     {role === 'admin' && (
-                        <li><Link to="/admin" style={styles.link}>Admin</Link></li>
+                        <>
+                            <li><Link to="/admin" style={{ ...styles.link, ...(isActive('/admin') ? styles.linkActive : {}) }}>Dashboard</Link></li>
+                            <li><Link to="/admin/users" style={{ ...styles.link, ...(isActive('/admin/users') ? styles.linkActive : {}) }}>Users</Link></li>
+                            <li><Link to="/admin/shops" style={{ ...styles.link, ...(isActive('/admin/shops') ? styles.linkActive : {}) }}>Shops</Link></li>
+                            <li><Link to="/admin/posts" style={{ ...styles.link, ...(isActive('/admin/posts') ? styles.linkActive : {}) }}>Posts</Link></li>
+                        </>
                     )}
                 </ul>
 
