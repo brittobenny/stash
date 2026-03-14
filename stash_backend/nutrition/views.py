@@ -20,6 +20,13 @@ from .serializers import (
     CookedRecipeLogSerializer,
 )
 from .services import recompute_daily_score, recompute_weekly_score
+from .services import (
+    GOAL_TARGETS,
+    build_goal_progress,
+    build_fix_my_plate_suggestions,
+    build_weekly_trend_payload,
+    build_daily_comparison_payload,
+)
 
 
 def _parse_date(value):
@@ -49,7 +56,11 @@ def daily_scores(request):
 @permission_classes([IsAuthenticated])
 def weekly_scores(request):
     today = timezone.localdate()
-    weeks = int(request.query_params.get("weeks", 8))
+    weeks_raw = request.query_params.get("weeks", 8)
+    try:
+        weeks = int(float(weeks_raw))
+    except (TypeError, ValueError):
+        weeks = 8
     weeks = max(1, min(weeks, 52))
     start = today - timedelta(days=(weeks * 7))
 
@@ -90,6 +101,22 @@ def profile_summary(request):
     latest_reward = NutritionRewardEvent.objects.filter(user=request.user).order_by("-awarded_at").first()
 
     data = NutritionGamificationProfileSerializer(profile).data
+    goal_progress = {}
+    fix_my_plate = []
+    if today_score:
+        totals = {
+            "calories": float(today_score.total_calories or 0),
+            "protein": float(today_score.total_protein or 0),
+            "carbs": float(today_score.total_carbs or 0),
+            "fats": float(today_score.total_fats or 0),
+            "vegetable_servings": float(today_score.total_vegetable_servings or 0),
+        }
+        goal_progress = build_goal_progress(totals)
+        fix_my_plate = build_fix_my_plate_suggestions(totals, goal_progress)
+
+    weekly_trend = build_weekly_trend_payload(request.user, end_day=today, days=7)
+    comparison = build_daily_comparison_payload(request.user, today)
+
     data.update(
         {
             "today_score": today_score.score if today_score else 0,
@@ -97,6 +124,11 @@ def profile_summary(request):
             "weekly_score": week_score.average_score if week_score else 0,
             "weekly_days_tracked": week_score.days_tracked if week_score else 0,
             "latest_reward": NutritionRewardEventSerializer(latest_reward).data if latest_reward else None,
+            "goals": GOAL_TARGETS,
+            "goal_progress": goal_progress,
+            "fix_my_plate": fix_my_plate,
+            "weekly_trend": weekly_trend,
+            "comparison": comparison,
         }
     )
     return Response(data)

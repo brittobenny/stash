@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Heart, MessageCircle } from 'lucide-react';
+import { ArrowLeft, Download, Heart, MessageCircle } from 'lucide-react';
 import { socialService } from '../services/api';
+import { downloadRecipePdf } from '../utils/recipePdf';
 import '../styles/global.css';
 import '../styles/social.css';
 
@@ -38,6 +39,19 @@ const SocialRecipeDetail = () => {
     if (!post?.steps) return [];
     return post.steps.split('\n').map((line) => line.trim()).filter(Boolean);
   }, [post]);
+
+  const handleDownloadPdf = () => {
+    if (!post) return;
+    downloadRecipePdf({
+      name: post.title,
+      cuisine: 'Community Recipe',
+      difficulty: 'Shared',
+      minutes: 'User posted',
+      nutrition: {},
+      parsed_ingredients: ingredients.map((item) => ({ name: item, display: item })),
+      steps,
+    });
+  };
 
   if (loading) {
     return <div className="social-loading">Loading recipe...</div>;
@@ -91,6 +105,9 @@ const SocialRecipeDetail = () => {
               <div className="detail-pill">
                 <MessageCircle size={16} /> {post.comment_count || 0} comments
               </div>
+              <button className="btn-secondary" onClick={handleDownloadPdf}>
+                <Download size={16} /> Download Recipe
+              </button>
             </div>
           </div>
         </div>

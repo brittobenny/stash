@@ -1,35 +1,34 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { User, Lock, ArrowRight, AlertCircle } from 'lucide-react';
+import { User, Lock, AlertCircle, ArrowRight } from 'lucide-react';
 import { authService } from '../services/api';
 import { normalizeName, normalizeImagePath } from '../utils/normalize';
 import '../styles/global.css';
 
 const authBackground = '/api/auth-background/';
+const AUTO_LOGIN_DEBOUNCE_MS = 900;
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+const redirectByRole = (navigate, role) => {
+    if (role === 'shopowner') navigate('/shop-owner/dashboard');
+    else if (role === 'admin') navigate('/admin');
+    else navigate('/customer/home');
+};
 
 const Login = () => {
     const navigate = useNavigate();
     const [formData, setFormData] = useState({ username: '', password: '' });
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
+    const [fieldInFocus, setFieldInFocus] = useState('');
+    const attemptedSignatureRef = useRef('');
 
-    const handleSubmit = async (e) => {
-        e.preventDefault();
+    const executeLogin = useCallback(async (username, password) => {
         setError('');
         setLoading(true);
 
         try {
-            const data = await authService.login(formData.username, formData.password);
-
-            // Assuming backend returns role, or we deduce it/fetch it. 
-            // If backend doesn't return role, we might need to fetch profile.
-            // Let's assume for this step the backend aligns or we default to customer.
-            // PRO TIP: If role is missing, we could add a subsequent call to /accounts/profile/ if it existed.
-            // But based on `accounts/models.py`, UserProfile has a role field.
-
-            // Let's assume the login view returns the role. If not, I'll need to update backend or fetch user details.
-            // For now, let's try to interpret role from response or fallback.
-
+            const data = await authService.login(username, password);
             const role = data.role || data.user?.role || 'customer';
             localStorage.setItem('role', role);
             if (data.user) {
@@ -41,17 +40,52 @@ const Login = () => {
                 localStorage.setItem('user', JSON.stringify(safeUser));
             }
 
-            if (role === 'shopowner') navigate('/shop-owner/dashboard');
-            else if (role === 'admin') navigate('/admin');
-            else navigate('/customer/home');
+            redirectByRole(navigate, role);
 
         } catch (err) {
-            console.error(err);
+            if (err?.response?.status !== 401) {
+                console.error(err);
+            }
             setError('Invalid credentials. Please try again.');
         } finally {
             setLoading(false);
         }
+    }, [navigate]);
+
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        const username = formData.username.trim();
+        const password = formData.password;
+        if (!username || !password || loading) return;
+        const signature = `${username}::${password}`;
+        attemptedSignatureRef.current = signature;
+        await executeLogin(username, password);
     };
+
+    useEffect(() => {
+        const token = localStorage.getItem('token');
+        const role = localStorage.getItem('role');
+        if (token) {
+            redirectByRole(navigate, role || 'customer');
+        }
+    }, [navigate]);
+
+    useEffect(() => {
+        const username = formData.username.trim();
+        const password = formData.password;
+        const emailLooksValid = EMAIL_PATTERN.test(username);
+        if (!emailLooksValid || !password || loading || fieldInFocus) return;
+
+        const signature = `${username}::${password}`;
+        if (signature === attemptedSignatureRef.current) return;
+
+        const timer = setTimeout(async () => {
+            attemptedSignatureRef.current = signature;
+            await executeLogin(username, password);
+        }, AUTO_LOGIN_DEBOUNCE_MS);
+
+        return () => clearTimeout(timer);
+    }, [formData.username, formData.password, loading, fieldInFocus, executeLogin]);
 
     return (
         <div style={styles.container}>
@@ -71,9 +105,12 @@ const Login = () => {
                         <input
                             type="text"
                             placeholder="Email"
+                            autoComplete="email"
                             style={styles.input}
                             value={formData.username}
                             onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+                            onFocus={() => setFieldInFocus('username')}
+                            onBlur={() => setFieldInFocus('')}
                             required
                         />
                     </div>
@@ -82,16 +119,23 @@ const Login = () => {
                         <input
                             type="password"
                             placeholder="Password"
+                            autoComplete="current-password"
                             style={styles.input}
                             value={formData.password}
                             onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                            onFocus={() => setFieldInFocus('password')}
+                            onBlur={() => setFieldInFocus('')}
                             required
                         />
                     </div>
 
                     <button type="submit" className="btn btn-primary" style={styles.submitBtn} disabled={loading}>
-                        {loading ? 'Logging in...' : 'Login'} <ArrowRight size={20} />
+                        {loading ? 'Verifying...' : 'Login'} <ArrowRight size={18} />
                     </button>
+
+                    <div style={styles.autoSignInNote}>
+                        {loading ? 'Verifying credentials...' : 'Auto sign-in starts after you finish typing, or use Login'}
+                    </div>
 
                     <p style={styles.footerText}>
                         Don't have an account? <span style={styles.link} onClick={() => navigate('/register')}>Register</span>
@@ -167,10 +211,19 @@ const styles = {
     },
     submitBtn: {
         width: '100%',
-        padding: '16px',
-        fontSize: '1.05rem',
-        marginTop: '0.8rem',
-        borderRadius: '999px'
+        padding: '14px 16px',
+        fontSize: '1rem',
+        borderRadius: '999px',
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: '8px',
+    },
+    autoSignInNote: {
+        marginTop: '-0.4rem',
+        fontSize: '0.88rem',
+        color: 'var(--color-text-light)',
+        textAlign: 'center',
     },
     error: {
         background: '#fde8e8',

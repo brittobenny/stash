@@ -5,6 +5,7 @@ from datetime import datetime
 from nutrition.parser import parse_ingredient
 from nutrition.calculator import calculate_nutrition
 from nutrition.services import DAILY_RANGES
+from nutrition.services import build_recipe_nutrition_badges
 from inventory.substitutions import get_substitutions, normalize_name as normalize_sub_name
 from .hero_ingredient_pipeline import compute_strict_recipe_match
 
@@ -193,19 +194,11 @@ class MealRecommender:
                 ingredient_quantities[idx] = max(ingredient_quantities[idx], quantity_value)
             ingredient_match_set.update(self._expand_name_for_match(canonical_name))
 
-        hero_ingredient = ""
-        if ingredient_names and ingredient_quantities:
-            max_idx = max(range(len(ingredient_names)), key=lambda idx: ingredient_quantities[idx])
-            hero_ingredient = ingredient_names[max_idx]
-        elif ingredient_names:
-            hero_ingredient = ingredient_names[0]
-
         return (
             parsed_ingredients,
             ingredient_names,
             ingredient_quantities,
             ingredient_match_set,
-            hero_ingredient,
         )
 
     # ----------------------------------
@@ -227,7 +220,15 @@ class MealRecommender:
         df["ingredient_quantities"] = parsed_bundle.apply(lambda x: x[2])
         # Match set includes canonical names + token variants for robust matching.
         df["ingredients_set"] = parsed_bundle.apply(lambda x: x[3])
-        df["hero_ingredient"] = parsed_bundle.apply(lambda x: x[4])
+        df["hero_ingredients"] = df.apply(
+            lambda row: self._resolve_recipe_heroes(
+                row.get("TranslatedRecipeName", ""),
+                row.get("ingredient_names", []),
+                row.get("ingredient_quantities", []),
+            ),
+            axis=1,
+        )
+        df["hero_ingredient"] = df["hero_ingredients"].apply(lambda heroes: heroes[0] if heroes else "")
 
         df.rename(columns={
             "TranslatedRecipeName": "name",
@@ -314,7 +315,7 @@ class MealRecommender:
                     break
         return substitutable
 
-    def _resolve_recipe_hero(self, title, ingredient_names, ingredient_quantities):
+    def _resolve_recipe_heroes(self, title, ingredient_names, ingredient_quantities):
         names = []
         for item in ingredient_names or []:
             canonical = self._canonical_name(item)
@@ -322,7 +323,7 @@ class MealRecommender:
                 names.append(canonical)
 
         if not names:
-            return ""
+            return []
 
         title_text = re.sub(r"[^a-z ]", " ", str(title or "").lower())
         title_text = re.sub(r"\s+", " ", title_text).strip()
@@ -339,21 +340,41 @@ class MealRecommender:
         elif len(quantities) > len(names):
             quantities = quantities[: len(names)]
 
-        # Fast path: if ingredient phrase appears in recipe title, prioritize it.
-        title_candidates = []
+        max_qty = max(quantities) if quantities else 0.0
+        scored = []
         for idx, ingredient in enumerate(names):
-            if ingredient and re.search(rf"\b{re.escape(ingredient)}\b", title_text):
-                title_candidates.append((quantities[idx], len(ingredient), -idx, ingredient))
-        if title_candidates:
-            # Prefer higher quantity, then more specific (longer) phrase, then earlier.
-            title_candidates.sort(reverse=True)
-            return title_candidates[0][3]
+            qty = quantities[idx] if idx < len(quantities) else 0.0
+            appears_in_title = bool(ingredient and re.search(rf"\b{re.escape(ingredient)}\b", title_text))
 
-        if quantities:
-            max_idx = max(range(len(names)), key=lambda idx: quantities[idx])
-            return names[max_idx]
+            score = 0
+            if appears_in_title:
+                score += 5
+            if max_qty > 0 and qty >= (0.75 * max_qty):
+                score += 3
+            if idx <= 2:
+                score += 1
+            if ingredient in self.hero_keywords:
+                score += 1
 
-        return names[0]
+            scored.append((score, qty, -idx, ingredient, appears_in_title))
+
+        scored.sort(reverse=True)
+
+        selected = []
+        for score, _, _, ingredient, appears_in_title in scored:
+            if appears_in_title or score >= 4:
+                if ingredient not in selected:
+                    selected.append(ingredient)
+
+        if not selected and scored:
+            selected.append(scored[0][3])
+
+        # Keep list compact but allow multiple core ingredients per dish.
+        return selected[:3]
+
+    def _resolve_recipe_hero(self, title, ingredient_names, ingredient_quantities):
+        heroes = self._resolve_recipe_heroes(title, ingredient_names, ingredient_quantities)
+        return heroes[0] if heroes else ""
 
     def _load_embedding_lookup(self):
         if self._embedding_lookup_cache is not None:
@@ -430,7 +451,8 @@ class MealRecommender:
 
             recipe_ing_names = row.get("ingredient_names", []) or []
             recipe_quantities = row.get("ingredient_quantities", []) or []
-            hero_ingredient = row.get("hero_ingredient", "") or ""
+            hero_ingredients = list(row.get("hero_ingredients", []) or [])
+            hero_ingredient = row.get("hero_ingredient", "") or (hero_ingredients[0] if hero_ingredients else "")
             if not recipe_ing_names:
                 continue
 
@@ -442,7 +464,7 @@ class MealRecommender:
             match_result = compute_strict_recipe_match(
                 recipe_ingredients=recipe_ing_names,
                 recipe_quantities=recipe_quantities,
-                hero_ingredient=hero_ingredient,
+                hero_ingredient=hero_ingredients or hero_ingredient,
                 pantry_ingredients=pantry_name_list,
                 pantry_quantities=pantry_qty_list,
                 recipe_embedding_lookup=recipe_embedding_lookup,
@@ -467,6 +489,7 @@ class MealRecommender:
                 "missing_set": missing_set,
                 "match_percent": match_percent,
                 "hero_ingredient": hero_ingredient,
+                "hero_ingredients": hero_ingredients or ([hero_ingredient] if hero_ingredient else []),
                 "match_status": status_value,
             })
 
@@ -515,6 +538,7 @@ class MealRecommender:
                 "image_url": image_url,
                 "steps": row["instructions"].split("."),
                 "hero_ingredient": candidate["hero_ingredient"],
+                "hero_ingredients": candidate.get("hero_ingredients", []),
                 "match_status": candidate["match_status"],
                 "used_ingredients": candidate["available_names"],
                 "missing_ingredients": sorted(list(missing_set)),
@@ -522,6 +546,15 @@ class MealRecommender:
                 "season": season,
                 "seasonal_hint": seasonal_hint,
                 "nutrition_score": nutrition_score,
+                "nutrition_badges": build_recipe_nutrition_badges(
+                    {
+                        "calories": nutrition.get("calories", 0),
+                        "protein": nutrition.get("protein", 0),
+                        "carbs": nutrition.get("carbs", 0),
+                        "fats": nutrition.get("fat", 0),
+                        "vegetable_servings": 0,
+                    }
+                ),
                 "parsed_ingredients": parsed_ingredients,
                 "nutrition": nutrition
             })
@@ -593,6 +626,8 @@ class MealRecommender:
             "season": self._current_season(),
             "seasonal_hint": seasonal_hint,
             "ingredients_set": list(recipe_ing_names),
+            "hero_ingredient": row.get("hero_ingredient", ""),
+            "hero_ingredients": list(row.get("hero_ingredients", []) or []),
         }
 
 

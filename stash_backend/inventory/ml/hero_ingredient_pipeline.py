@@ -93,6 +93,54 @@ _STOPWORDS = {
     "pinch", "pinches", "dash", "handful", "bunch", "sprig", "sprigs",
 }
 
+_BASIC_SPICE_TERMS = {
+    "salt",
+    "black salt",
+    "turmeric",
+    "turmeric powder",
+    "red chili",
+    "red chilli",
+    "dry red chili",
+    "dry red chilli",
+    "green chili",
+    "green chilli",
+    "chili powder",
+    "chilli powder",
+    "chili flakes",
+    "chilli flakes",
+    "red chili flakes",
+    "red chilli flakes",
+    "cumin",
+    "cumin seed",
+    "cumin powder",
+    "jeera",
+    "coriander",
+    "coriander powder",
+    "dhania",
+    "mustard seed",
+    "mustard seeds",
+    "rai",
+    "garam masala",
+    "black pepper",
+    "pepper",
+    "black peppercorn",
+    "black peppercorns",
+    "asafoetida",
+    "hing",
+    "fenugreek",
+    "methi",
+    "fennel",
+    "saunf",
+    "cardamom",
+    "clove",
+    "cloves",
+    "cinnamon",
+    "bay leaf",
+    "bay leaves",
+    "curry leaf",
+    "curry leaves",
+}
+
 
 def _clean_text(text: str) -> str:
     """Lower-case text and keep only letters/numbers/spaces."""
@@ -147,7 +195,6 @@ CANONICAL_MAP: Dict[str, str] = {
     "dahi": "yogurt",
 }
 
-
 def normalize_ingredient(name: str) -> str:
     """Normalize one ingredient name into canonical form."""
     normalized = _normalize_phrase(name)
@@ -175,6 +222,56 @@ def normalize(name: str) -> str:
     if not normalized:
         return ""
     return CANONICAL_MAP.get(normalized, normalized)
+
+
+BASIC_SPICE_SET = {
+    normalize(term)
+    for term in _BASIC_SPICE_TERMS
+    if normalize(term)
+}
+
+
+def is_basic_spice(name: str) -> bool:
+    """Return True when ingredient is treated as an always-available household spice."""
+    return normalize(name) in BASIC_SPICE_SET
+
+
+def normalize_hero_ingredients(hero_ingredient) -> List[str]:
+    """
+    Normalize hero ingredient input into an ordered unique list.
+
+    Accepted input shapes:
+    - "chicken"
+    - "chicken, rice"
+    - ["chicken", "rice"]
+    - ("chicken", "rice")
+    """
+    raw_items: List[str] = []
+
+    if isinstance(hero_ingredient, str):
+        text = hero_ingredient.strip()
+        if not text:
+            return []
+        if any(sep in text for sep in [",", "|", ";", "/"]):
+            raw_items = [part.strip() for part in re.split(r"[,|;/]+", text) if part.strip()]
+        else:
+            raw_items = [text]
+    elif isinstance(hero_ingredient, Sequence):
+        for item in hero_ingredient:
+            if isinstance(item, str):
+                if item.strip():
+                    raw_items.append(item.strip())
+    elif hero_ingredient:
+        raw_items = [str(hero_ingredient).strip()]
+
+    normalized: List[str] = []
+    seen = set()
+    for item in raw_items:
+        canonical = normalize(item)
+        if canonical and canonical not in seen:
+            seen.add(canonical)
+            normalized.append(canonical)
+    return normalized
 
 
 def _parse_quantity(value: str) -> float:
@@ -462,7 +559,7 @@ def predict_hero(
 def compute_recipe_match(
     recipe_ingredients: List[str],
     quantities: List[float],
-    hero_ingredient: str,
+    hero_ingredient,
     user_pantry: List[str],
     strict_mode: bool = False,
 ) -> float:
@@ -513,12 +610,12 @@ def compute_recipe_match(
         if normalized_item:
             pantry_set.add(normalized_item)
 
-    hero = normalize_ingredient(str(hero_ingredient or ""))
+    hero_list = normalize_hero_ingredients(hero_ingredient)
     recipe_ingredient_set = set(normalized_ingredients)
-    hero_in_recipe = bool(hero and hero in recipe_ingredient_set)
-    hero_in_pantry = bool(hero and hero in pantry_set)
+    hero_set_in_recipe = {hero for hero in hero_list if hero in recipe_ingredient_set}
+    hero_in_pantry_count = sum(1 for hero in hero_set_in_recipe if hero in pantry_set)
 
-    if strict_mode and hero_in_recipe and not hero_in_pantry:
+    if strict_mode and hero_set_in_recipe and hero_in_pantry_count < len(hero_set_in_recipe):
         return 0.0
 
     quantity_median = median(normalized_quantities) if normalized_quantities else 0.0
@@ -527,7 +624,10 @@ def compute_recipe_match(
     matched_score = 0.0
 
     for ingredient, quantity in zip(normalized_ingredients, normalized_quantities):
-        if hero_in_recipe and ingredient == hero:
+        if ingredient in BASIC_SPICE_SET and ingredient not in hero_set_in_recipe:
+            continue
+
+        if ingredient in hero_set_in_recipe:
             weight = 5
         elif quantity > quantity_median:
             weight = 3
@@ -543,8 +643,12 @@ def compute_recipe_match(
 
     base_score = matched_score / total_possible_score
 
-    if hero_in_recipe and not hero_in_pantry:
-        base_score *= 0.5
+    if hero_set_in_recipe and hero_in_pantry_count < len(hero_set_in_recipe):
+        if len(hero_set_in_recipe) == 1:
+            base_score *= 0.5
+        else:
+            hero_coverage = hero_in_pantry_count / max(len(hero_set_in_recipe), 1)
+            base_score *= max(0.25, hero_coverage)
 
     return round(base_score * 100.0, 2)
 
@@ -597,15 +701,17 @@ def compute_strict_recipe_match(
         except (TypeError, ValueError):
             return max(_parse_quantity(str(value)), 0.0)
 
-    def _result(score: float, status: str, matched=None, missing=None, hero_match=""):
+    def _result(score: float, status: str, matched=None, missing=None, hero_matches=None):
         payload = {
             "score": float(score),
             "status": status,
         }
         if return_details:
+            hero_matches = hero_matches or {}
             payload["matched_ingredients"] = sorted(set(matched or []))
             payload["missing_ingredients"] = sorted(set(missing or []))
-            payload["hero_pantry_match"] = hero_match
+            payload["hero_pantry_match"] = next(iter(hero_matches.values()), "")
+            payload["hero_pantry_matches"] = hero_matches
         return payload
 
     normalized_recipe_ingredients: List[str] = []
@@ -659,28 +765,34 @@ def compute_strict_recipe_match(
 
         return "", 0.0
 
-    hero = normalize(hero_ingredient)
-    if not hero:
-        return _result(score=0.0, status="NEEDS_KEY_INGREDIENT")
+    hero_candidates = normalize_hero_ingredients(hero_ingredient)
+    hero_list = [hero for hero in hero_candidates if hero in set(normalized_recipe_ingredients)]
 
-    hero_match, hero_similarity = _best_pantry_match(hero)
-    if not hero_match:
+    if not hero_list:
         return _result(score=0.0, status="NEEDS_KEY_INGREDIENT")
+    hero_set = set(hero_list)
+    hero_match_lookup: Dict[str, str] = {}
 
-    if hero in recipe_vec_lookup and pantry_lookup.get(hero_match, {}).get("embedding"):
-        if not is_semantic_match(recipe_vec_lookup[hero], pantry_lookup[hero_match]["embedding"], threshold=threshold):
+    for hero in hero_list:
+        hero_match, hero_similarity = _best_pantry_match(hero)
+        if not hero_match:
             return _result(score=0.0, status="NEEDS_KEY_INGREDIENT")
-    elif hero_similarity < 1.0:
-        return _result(score=0.0, status="NEEDS_KEY_INGREDIENT")
 
-    required_hero_qty = sum(
-        qty
-        for ingredient, qty in zip(normalized_recipe_ingredients, normalized_recipe_quantities)
-        if ingredient == hero
-    )
-    pantry_hero_qty = float(pantry_lookup.get(hero_match, {}).get("quantity", 0.0))
-    if pantry_hero_qty < required_hero_qty:
-        return _result(score=0.0, status="INSUFFICIENT_HERO_QUANTITY")
+        if hero in recipe_vec_lookup and pantry_lookup.get(hero_match, {}).get("embedding"):
+            if not is_semantic_match(recipe_vec_lookup[hero], pantry_lookup[hero_match]["embedding"], threshold=threshold):
+                return _result(score=0.0, status="NEEDS_KEY_INGREDIENT")
+        elif hero_similarity < 1.0:
+            return _result(score=0.0, status="NEEDS_KEY_INGREDIENT")
+
+        required_hero_qty = sum(
+            qty
+            for ingredient, qty in zip(normalized_recipe_ingredients, normalized_recipe_quantities)
+            if ingredient == hero
+        )
+        pantry_hero_qty = float(pantry_lookup.get(hero_match, {}).get("quantity", 0.0))
+        if pantry_hero_qty < required_hero_qty:
+            return _result(score=0.0, status="INSUFFICIENT_HERO_QUANTITY")
+        hero_match_lookup[hero] = hero_match
 
     quantity_median = median(normalized_recipe_quantities) if normalized_recipe_quantities else 0.0
     total_weighted_score = 0.0
@@ -690,11 +802,14 @@ def compute_strict_recipe_match(
 
     ingredient_match_cache: Dict[str, Tuple[str, float]] = {}
     for ingredient, required_qty in zip(normalized_recipe_ingredients, normalized_recipe_quantities):
+        if ingredient in BASIC_SPICE_SET and ingredient not in hero_set:
+            continue
+
         if ingredient not in ingredient_match_cache:
             ingredient_match_cache[ingredient] = _best_pantry_match(ingredient)
         matched_pantry_name, _ = ingredient_match_cache[ingredient]
 
-        if ingredient == hero:
+        if ingredient in hero_set:
             weight = 5.0
         elif required_qty > quantity_median:
             weight = 3.0
@@ -716,7 +831,13 @@ def compute_strict_recipe_match(
         total_possible_weight += weight
 
     if total_possible_weight <= 0:
-        return _result(score=0.0, status="LOW_MATCH", matched=matched_names, missing=missing_names, hero_match=hero_match)
+        return _result(
+            score=0.0,
+            status="LOW_MATCH",
+            matched=matched_names,
+            missing=missing_names,
+            hero_matches=hero_match_lookup,
+        )
 
     final_score = total_weighted_score / total_possible_weight
     match_percentage = round(final_score * 100.0, 2)
@@ -733,7 +854,7 @@ def compute_strict_recipe_match(
         status=status,
         matched=matched_names,
         missing=missing_names,
-        hero_match=hero_match,
+        hero_matches=hero_match_lookup,
     )
 
 

@@ -1,8 +1,28 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, ChefHat, Flame, Leaf, AlertTriangle, Save, Search } from 'lucide-react';
+import { ArrowLeft, ChefHat, Flame, Leaf, AlertTriangle, Save, Search, Play, Pause, Square, SkipBack, SkipForward } from 'lucide-react';
 import { recipeService, shopService } from '../services/api';
+import { downloadRecipePdf } from '../utils/recipePdf';
 import '../styles/global.css';
+
+const BASIC_SPICES = new Set([
+    'salt', 'black salt', 'turmeric', 'turmeric powder', 'red chili', 'red chilli',
+    'dry red chili', 'dry red chilli', 'green chili', 'green chilli',
+    'chili powder', 'chilli powder', 'cumin', 'cumin seed', 'cumin powder', 'jeera',
+    'coriander', 'coriander powder', 'dhania', 'mustard seed', 'mustard seeds', 'rai',
+    'garam masala', 'black pepper', 'pepper', 'asafoetida', 'hing', 'fenugreek', 'methi',
+    'fennel', 'saunf', 'cardamom', 'clove', 'cloves', 'cinnamon', 'bay leaf', 'bay leaves',
+    'curry leaf', 'curry leaves', 'chili flakes', 'chilli flakes', 'red chili flakes', 'red chilli flakes',
+]);
+
+const normalizeSpiceName = (value) =>
+    String(value || '')
+        .toLowerCase()
+        .replace(/[^a-z\s]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+const isBasicSpice = (name) => BASIC_SPICES.has(normalizeSpiceName(name));
 
 const RecipeDetail = () => {
     const navigate = useNavigate();
@@ -21,12 +41,36 @@ const RecipeDetail = () => {
     const [addingMissing, setAddingMissing] = useState(false);
     const [addMissingMsg, setAddMissingMsg] = useState('');
     const [scale, setScale] = useState(1);
+    const [speechRate, setSpeechRate] = useState(1);
+    const [isReadingSteps, setIsReadingSteps] = useState(false);
+    const [isSpeechPaused, setIsSpeechPaused] = useState(false);
+    const [activeStepIndex, setActiveStepIndex] = useState(-1);
+    const [speechMode, setSpeechMode] = useState('continuous');
+    const [hoveredVoiceControl, setHoveredVoiceControl] = useState('');
+    const [speechLanguage, setSpeechLanguage] = useState('en');
+    const [translatedMalayalamSteps, setTranslatedMalayalamSteps] = useState([]);
+    const [translationLoading, setTranslationLoading] = useState(false);
+    const [translationError, setTranslationError] = useState('');
     const backTo = location.state?.from || '/customer/cook';
+    const supportsSpeech = typeof window !== 'undefined' && 'speechSynthesis' in window && 'SpeechSynthesisUtterance' in window;
+    const stopSpeechRef = React.useRef(false);
+    const speechSessionRef = React.useRef(0);
+    const audioRef = React.useRef(null);
 
-    const getRecipeImage = (url) => {
-        const localFallback = '/api/category-image/vegetable/';
-        if (!url || !/^https?:\/\//i.test(url)) return localFallback;
-        return `/api/image-proxy/?url=${encodeURIComponent(url.trim())}`;
+    const buildFallbackSourceUrl = (recipeName) => {
+        const name = String(recipeName || '').trim().toLowerCase();
+        const query = encodeURIComponent(name ? `${name} indian food recipe` : 'indian food recipe');
+        return `/api/live-recipe-image/?q=${query}&fallback=${encodeURIComponent('/api/category-image/vegetable/')}`;
+    };
+
+    const buildRecipeFallback = (recipeName) => {
+        return `/api/image-proxy/?fallback=${encodeURIComponent(buildFallbackSourceUrl(recipeName))}`;
+    };
+
+    const getRecipeImage = (url, recipeName) => {
+        const rawUrl = String(url || '').trim();
+        if (!rawUrl || !/^https?:\/\//i.test(rawUrl)) return buildRecipeFallback(recipeName);
+        return `/api/image-proxy/?url=${encodeURIComponent(rawUrl)}&fallback=${encodeURIComponent(buildFallbackSourceUrl(recipeName))}`;
     };
 
     useEffect(() => {
@@ -39,7 +83,7 @@ const RecipeDetail = () => {
                 if (res.data?.scale && res.data.scale !== scaleValue) {
                     setScale(Number(res.data.scale));
                 }
-                setImageSrc(getRecipeImage(res.data?.image_url || ''));
+                setImageSrc(getRecipeImage(res.data?.image_url || '', res.data?.name || ''));
                 const baseList = (res.data?.ingredient_status || [])
                     .filter((item) => (item?.name || '').trim())
                     .map((item) => ({
@@ -61,7 +105,32 @@ const RecipeDetail = () => {
         return () => clearTimeout(timer);
     }, [id, scale]);
 
+    useEffect(() => {
+        return () => {
+            stopSpeechRef.current = true;
+            if (audioRef.current) {
+                audioRef.current.pause();
+                audioRef.current.src = '';
+                audioRef.current = null;
+            }
+            if (supportsSpeech) {
+                window.speechSynthesis.cancel();
+            }
+        };
+    }, [supportsSpeech]);
+
     const nutrition = recipe?.nutrition || {};
+    const nutritionInsights = recipe?.nutrition_insights || {};
+    const recipeSteps = useMemo(
+        () => (recipe?.steps || []).filter((s) => String(s || '').trim()).slice(0, 12),
+        [recipe]
+    );
+    const spokenSteps = useMemo(() => {
+        if (speechLanguage === 'ml' && translatedMalayalamSteps.length === recipeSteps.length) {
+            return translatedMalayalamSteps;
+        }
+        return recipeSteps;
+    }, [speechLanguage, translatedMalayalamSteps, recipeSteps]);
 
     const totals = useMemo(() => {
         return cookList.reduce(
@@ -73,10 +142,38 @@ const RecipeDetail = () => {
         );
     }, [cookList]);
 
+    const filteredMissingIngredients = useMemo(
+        () => (recipe?.missing_ingredients || []).filter((item) => item && !isBasicSpice(item)),
+        [recipe]
+    );
+
     const handleCookQuantityChange = (index, value) => {
         const next = [...cookList];
         next[index] = { ...next[index], grams: Number(value) };
         setCookList(next);
+    };
+
+    const loadMalayalamTranslation = async (stepsToTranslate = recipeSteps) => {
+        if (!stepsToTranslate.length) return false;
+        if (translatedMalayalamSteps.length === stepsToTranslate.length) return true;
+
+        setTranslationLoading(true);
+        setTranslationError('');
+        try {
+            const res = await recipeService.translateSteps(stepsToTranslate, 'ml', 'en');
+            const translated = Array.isArray(res.data?.translated_steps) ? res.data.translated_steps : [];
+            if (translated.length === stepsToTranslate.length) {
+                setTranslatedMalayalamSteps(translated);
+                return true;
+            }
+            setTranslationError('Malayalam translation is unavailable right now.');
+            return false;
+        } catch (err) {
+            setTranslationError('Malayalam translation is unavailable right now.');
+            return false;
+        } finally {
+            setTranslationLoading(false);
+        }
     };
 
     const handleCookConfirm = async () => {
@@ -105,106 +202,329 @@ const RecipeDetail = () => {
 
     const handleDownloadPdf = () => {
         if (!recipe) return;
-        const steps = (recipe.steps || []).filter((s) => s.trim());
-        const ingredients = (recipe.ingredient_status || []).filter((item) => (item?.name || '').trim());
-        const doodleSvg = `<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160' viewBox='0 0 160 160'>
-  <g stroke='#f3b9b9' stroke-width='2' fill='none' stroke-linecap='round' stroke-linejoin='round' opacity='0.7'>
-    <circle cx='26' cy='30' r='6'/>
-    <line x1='26' y1='36' x2='26' y2='64'/>
-    <line x1='90' y1='18' x2='90' y2='64'/>
-    <line x1='82' y1='18' x2='82' y2='34'/>
-    <line x1='98' y1='18' x2='98' y2='34'/>
-    <path d='M120 40c-10 2-16 10-12 20 8 2 18-4 20-14-2-4-4-6-8-6z'/>
-    <circle cx='54' cy='108' r='7'/>
-    <path d='M48 120c10 8 22 8 32 0'/>
-  </g>
-</svg>`;
-        const doodleBg = `data:image/svg+xml;utf8,${encodeURIComponent(doodleSvg)}`;
-        const html = `
-<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8" />
-  <title>${recipe.name} - Recipe</title>
-  <style>
-    :root { --accent: #e11d2e; --ink: #1b1b1b; --muted: #6b6b6b; --paper: #fff7f2; --card: #ffffff; }
-    * { box-sizing: border-box; }
-    body { font-family: 'Plus Jakarta Sans', Arial, sans-serif; color: var(--ink); margin: 0; padding: 28px; background: var(--paper); background-image: url("${doodleBg}"); background-size: 160px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    .sheet { background: var(--card); border-radius: 18px; padding: 24px; border: 1px solid #f0e6e0; box-shadow: 0 10px 20px rgba(0,0,0,0.08); }
-    .header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; border-bottom: 2px solid #f0e6e0; padding-bottom: 16px; margin-bottom: 20px; }
-    .title { font-size: 28px; margin: 0; }
-    .meta { color: var(--muted); margin-top: 6px; }
-    .badge { display: inline-block; background: var(--accent); color: #fff; padding: 4px 10px; border-radius: 999px; font-size: 12px; margin-top: 10px; letter-spacing: 0.08em; }
-    .doodle { width: 64px; height: 64px; }
-    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-    .card { border: 1px solid #f0e6e0; border-radius: 14px; padding: 14px; background: #fffaf6; }
-    h3 { margin: 0 0 10px; font-size: 16px; }
-    ul, ol { padding-left: 18px; margin: 0; }
-    li { margin-bottom: 8px; }
-    .steps { margin-top: 16px; }
-    .footer { margin-top: 18px; color: var(--muted); font-size: 12px; text-align: right; }
-    @media print {
-      body { padding: 20px; }
-      .card { break-inside: avoid; }
-    }
-  </style>
-</head>
-<body>
-  <div class="sheet">
-    <div class="header">
-      <div>
-        <h1 class="title">${recipe.name}</h1>
-        <div class="meta">${recipe.cuisine || 'General'} | ${recipe.difficulty} | ${recipe.minutes} mins</div>
-        <div class="badge">STASH RECIPE</div>
-      </div>
-      <svg class="doodle" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
-        <g stroke="#e11d2e" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" opacity="0.8">
-          <circle cx="18" cy="18" r="6"/>
-          <line x1="18" y1="24" x2="18" y2="48"/>
-          <line x1="40" y1="12" x2="40" y2="48"/>
-          <line x1="34" y1="12" x2="34" y2="28"/>
-          <line x1="46" y1="12" x2="46" y2="28"/>
-          <path d="M16 52c10 6 22 6 32 0"/>
-        </g>
-      </svg>
-    </div>
-    <div class="grid">
-      <div class="card">
-        <h3>Ingredients</h3>
-        <ul>
-          ${ingredients.map(i => `<li>${i.name}: ${i.display || (i.needed_g + ' g')}</li>`).join('')}
-        </ul>
-      </div>
-      <div class="card">
-        <h3>Nutrition</h3>
-        <ul>
-          <li>Calories: ${Math.round(nutrition.calories || 0)} kcal</li>
-          <li>Protein: ${Math.round(nutrition.protein || 0)} g</li>
-          <li>Carbs: ${Math.round(nutrition.carbs || 0)} g</li>
-          <li>Fat: ${Math.round(nutrition.fat || 0)} g</li>
-        </ul>
-      </div>
-    </div>
-    <div class="card steps">
-      <h3>Steps</h3>
-      <ol>
-        ${steps.map(s => `<li>${s}</li>`).join('')}
-      </ol>
-    </div>
-    <div class="footer">Generated from Stash &bull; Save as PDF from the print dialog</div>
-  </div>
-</body>
-</html>`;
-        const win = window.open('', '_blank');
-        if (!win) return;
-        win.document.open();
-        win.document.write(html);
-        win.document.close();
-        win.focus();
-        setTimeout(() => {
-            win.print();
-        }, 500);
+        downloadRecipePdf(recipe);
     };
+
+    const setSpeechIdle = () => {
+        setIsReadingSteps(false);
+        setIsSpeechPaused(false);
+    };
+
+    const resetSpeechState = () => {
+        setSpeechIdle();
+        setSpeechMode('continuous');
+        setActiveStepIndex(-1);
+    };
+
+    const stopReadingSteps = () => {
+        stopSpeechRef.current = true;
+        speechSessionRef.current += 1;
+        if (audioRef.current) {
+            audioRef.current.pause();
+            audioRef.current.src = '';
+            audioRef.current = null;
+        }
+        if (supportsSpeech) {
+            window.speechSynthesis.cancel();
+        }
+        resetSpeechState();
+    };
+
+    const stopMalayalamAudio = () => {
+        if (audioRef.current) {
+            audioRef.current.pause();
+            if (audioRef.current._objectUrl) {
+                URL.revokeObjectURL(audioRef.current._objectUrl);
+            }
+            audioRef.current.src = '';
+            audioRef.current = null;
+        }
+    };
+
+    const createMalayalamAudio = async (text, rate) => {
+        const res = await recipeService.fetchStepTts(text, 'ml');
+        const objectUrl = URL.createObjectURL(res.data);
+        const audio = new Audio(objectUrl);
+        audio._objectUrl = objectUrl;
+        audio.playbackRate = rate;
+        return audio;
+    };
+
+    const playMalayalamStep = async (index, rate) => {
+        if (!spokenSteps.length || index < 0 || index >= spokenSteps.length) return;
+        stopSpeechRef.current = false;
+        const sessionId = speechSessionRef.current + 1;
+        speechSessionRef.current = sessionId;
+        stopMalayalamAudio();
+        setIsReadingSteps(true);
+        setIsSpeechPaused(false);
+        setSpeechMode('single');
+        setActiveStepIndex(index);
+        let audio;
+        try {
+            audio = await createMalayalamAudio(spokenSteps[index], rate);
+        } catch (err) {
+            if (sessionId !== speechSessionRef.current) return;
+            setTranslationError('Malayalam audio could not be played right now.');
+            setSpeechIdle();
+            return;
+        }
+        if (sessionId !== speechSessionRef.current) {
+            if (audio._objectUrl) {
+                URL.revokeObjectURL(audio._objectUrl);
+            }
+            return;
+        }
+        audioRef.current = audio;
+        audio.onended = () => {
+            if (sessionId !== speechSessionRef.current) return;
+            setSpeechIdle();
+        };
+        audio.onerror = () => {
+            if (sessionId !== speechSessionRef.current) return;
+            setTranslationError('Malayalam audio could not be played right now.');
+            setSpeechIdle();
+        };
+        audio.play().catch(() => {
+            if (sessionId !== speechSessionRef.current) return;
+            setTranslationError('Malayalam audio could not be played right now.');
+            setSpeechIdle();
+        });
+    };
+
+    const playMalayalamStepsFromIndex = async (startIndex, rate) => {
+        if (!spokenSteps.length) return;
+        stopSpeechRef.current = false;
+        const sessionId = speechSessionRef.current + 1;
+        speechSessionRef.current = sessionId;
+        stopMalayalamAudio();
+        setIsReadingSteps(true);
+        setIsSpeechPaused(false);
+        setSpeechMode('continuous');
+
+        const playNext = async (index) => {
+            if (sessionId !== speechSessionRef.current) return;
+            if (stopSpeechRef.current || index >= spokenSteps.length) {
+                resetSpeechState();
+                return;
+            }
+            setActiveStepIndex(index);
+            let audio;
+            try {
+                audio = await createMalayalamAudio(spokenSteps[index], rate);
+            } catch (err) {
+                if (sessionId !== speechSessionRef.current) return;
+                setTranslationError('Malayalam audio could not be played right now.');
+                setSpeechIdle();
+                return;
+            }
+            if (sessionId !== speechSessionRef.current) {
+                if (audio._objectUrl) {
+                    URL.revokeObjectURL(audio._objectUrl);
+                }
+                return;
+            }
+            audioRef.current = audio;
+            audio.onended = () => {
+                if (sessionId !== speechSessionRef.current) return;
+                if (stopSpeechRef.current) {
+                    resetSpeechState();
+                    return;
+                }
+                playNext(index + 1);
+            };
+            audio.onerror = () => {
+                if (sessionId !== speechSessionRef.current) return;
+                setTranslationError('Malayalam audio could not be played right now.');
+                setSpeechIdle();
+            };
+            audio.play().catch(() => {
+                if (sessionId !== speechSessionRef.current) return;
+                setTranslationError('Malayalam audio could not be played right now.');
+                setSpeechIdle();
+            });
+        };
+
+        playNext(startIndex);
+    };
+
+    const speakSingleStep = (index, rate) => {
+        if (!supportsSpeech || !spokenSteps.length || index < 0 || index >= spokenSteps.length) return;
+        stopSpeechRef.current = false;
+        const sessionId = speechSessionRef.current + 1;
+        speechSessionRef.current = sessionId;
+        window.speechSynthesis.cancel();
+        setIsReadingSteps(true);
+        setIsSpeechPaused(false);
+        setSpeechMode('single');
+        setActiveStepIndex(index);
+
+        const utterance = new window.SpeechSynthesisUtterance(`Step ${index + 1}. ${spokenSteps[index]}`);
+        utterance.rate = rate;
+        utterance.pitch = 1;
+        utterance.lang = speechLanguage === 'ml' ? 'ml-IN' : 'en-US';
+        utterance.onend = () => {
+            if (sessionId !== speechSessionRef.current) return;
+            if (stopSpeechRef.current) {
+                setSpeechIdle();
+                return;
+            }
+            setSpeechIdle();
+        };
+        utterance.onerror = () => {
+            if (sessionId !== speechSessionRef.current) return;
+            setSpeechIdle();
+        };
+        if (speechLanguage === 'ml') {
+            const voices = window.speechSynthesis.getVoices();
+            const voice = voices.find((item) => String(item.lang || '').toLowerCase().startsWith('ml'));
+            if (voice) utterance.voice = voice;
+        }
+        window.speechSynthesis.speak(utterance);
+    };
+
+    const speakStepsFromIndex = (startIndex, rate) => {
+        if (!supportsSpeech || !spokenSteps.length) return;
+        stopSpeechRef.current = false;
+        const sessionId = speechSessionRef.current + 1;
+        speechSessionRef.current = sessionId;
+        window.speechSynthesis.cancel();
+        setIsReadingSteps(true);
+        setIsSpeechPaused(false);
+        setSpeechMode('continuous');
+
+        const speakNext = (index) => {
+            if (sessionId !== speechSessionRef.current) return;
+            if (stopSpeechRef.current || index >= spokenSteps.length) {
+                resetSpeechState();
+                return;
+            }
+
+            setActiveStepIndex(index);
+            const utterance = new window.SpeechSynthesisUtterance(`Step ${index + 1}. ${spokenSteps[index]}`);
+            utterance.rate = rate;
+            utterance.pitch = 1;
+            utterance.lang = speechLanguage === 'ml' ? 'ml-IN' : 'en-US';
+            utterance.onend = () => {
+                if (sessionId !== speechSessionRef.current) return;
+                if (stopSpeechRef.current) {
+                    resetSpeechState();
+                    return;
+                }
+                speakNext(index + 1);
+            };
+            utterance.onerror = () => {
+                if (sessionId !== speechSessionRef.current) return;
+                setSpeechIdle();
+            };
+            if (speechLanguage === 'ml') {
+                const voices = window.speechSynthesis.getVoices();
+                const voice = voices.find((item) => String(item.lang || '').toLowerCase().startsWith('ml'));
+                if (voice) utterance.voice = voice;
+            }
+            window.speechSynthesis.speak(utterance);
+        };
+
+        speakNext(startIndex);
+    };
+
+    const handleReadSteps = async () => {
+        if (!recipeSteps.length) return;
+        if (speechLanguage === 'ml') {
+            const ready = await loadMalayalamTranslation(recipeSteps);
+            if (!ready) return;
+            const restartIndex = activeStepIndex >= 0 ? activeStepIndex : 0;
+            playMalayalamStepsFromIndex(restartIndex, speechRate);
+            return;
+        }
+        if (!supportsSpeech) return;
+        const restartIndex = activeStepIndex >= 0 ? activeStepIndex : 0;
+        speakStepsFromIndex(restartIndex, speechRate);
+    };
+
+    const handlePauseResume = () => {
+        if (!isReadingSteps) return;
+        if (speechLanguage === 'ml') {
+            if (!audioRef.current) return;
+            if (isSpeechPaused) {
+                audioRef.current.play().catch(() => {
+                    setTranslationError('Malayalam audio could not be resumed.');
+                });
+                setIsSpeechPaused(false);
+                return;
+            }
+            audioRef.current.pause();
+            setIsSpeechPaused(true);
+            return;
+        }
+        if (!supportsSpeech) return;
+        if (!window.speechSynthesis.speaking && !window.speechSynthesis.paused) return;
+        if (isSpeechPaused) {
+            window.speechSynthesis.resume();
+            setIsSpeechPaused(false);
+            return;
+        }
+        window.speechSynthesis.pause();
+        setIsSpeechPaused(true);
+    };
+
+    const handleRateChange = (rate) => {
+        setSpeechRate(rate);
+        if (speechLanguage === 'ml' && audioRef.current) {
+            audioRef.current.playbackRate = rate;
+            return;
+        }
+        if (isReadingSteps && supportsSpeech) {
+            const restartIndex = activeStepIndex >= 0 ? activeStepIndex : 0;
+            if (speechMode === 'single') {
+                speakSingleStep(restartIndex, rate);
+            } else {
+                speakStepsFromIndex(restartIndex, rate);
+            }
+        }
+    };
+
+    const getVoiceButtonStyle = (buttonId) =>
+        hoveredVoiceControl === buttonId
+            ? { ...styles.stepActionBtn, ...styles.stepActionBtnHover }
+            : styles.stepActionBtn;
+
+    const handleStepNavigation = async (direction) => {
+        if (!recipeSteps.length) return;
+        if (speechLanguage === 'ml') {
+            const ready = await loadMalayalamTranslation(recipeSteps);
+            if (!ready) return;
+            const current = activeStepIndex >= 0 ? activeStepIndex : 0;
+            const nextIndex = Math.max(0, Math.min(recipeSteps.length - 1, current + direction));
+            playMalayalamStep(nextIndex, speechRate);
+            return;
+        }
+        if (!supportsSpeech) return;
+        const current = activeStepIndex >= 0 ? activeStepIndex : 0;
+        const nextIndex = Math.max(0, Math.min(recipeSteps.length - 1, current + direction));
+        if (nextIndex === current && activeStepIndex >= 0) {
+            speakSingleStep(nextIndex, speechRate);
+            return;
+        }
+        speakSingleStep(nextIndex, speechRate);
+    };
+
+    useEffect(() => {
+        stopSpeechRef.current = true;
+        speechSessionRef.current += 1;
+        stopMalayalamAudio();
+        if (supportsSpeech) {
+            window.speechSynthesis.cancel();
+        }
+        resetSpeechState();
+    }, [id, supportsSpeech]);
+
+    useEffect(() => {
+        setTranslatedMalayalamSteps([]);
+        setTranslationError('');
+        setTranslationLoading(false);
+        setSpeechLanguage('en');
+    }, [id]);
 
 
     const handleAddMissingToCart = async () => {
@@ -213,7 +533,7 @@ const RecipeDetail = () => {
         try {
             const res = await shopService.getProducts();
             const products = res.data || [];
-            const missing = recipe?.missing_ingredients || [];
+            const missing = filteredMissingIngredients;
             let added = 0;
             for (const item of missing) {
                 const lower = String(item).toLowerCase();
@@ -295,7 +615,11 @@ const RecipeDetail = () => {
                         alt={recipe.name}
                         style={styles.heroImg}
                         onError={() => {
-                            setImageSrc('/api/category-image/vegetable/');
+                            setImageSrc((prev) => {
+                                const fallbackSrc = buildRecipeFallback(recipe?.name);
+                                if (prev !== fallbackSrc) return fallbackSrc;
+                                return '/api/category-image/vegetable/';
+                            });
                         }}
                     />
                 </div>
@@ -309,6 +633,21 @@ const RecipeDetail = () => {
                     <div style={styles.nutritionCard} className="hover-float">Carbs {Math.round(nutrition.carbs || 0)} g</div>
                     <div style={styles.nutritionCard} className="hover-float">Fat {Math.round(nutrition.fat || 0)} g</div>
                 </div>
+                <div style={styles.nutritionMetaRow}>
+                    <span style={styles.nutritionScorePill}>Nutrition Score {Math.round(Number(nutritionInsights.score || recipe.nutrition_score || 0))}</span>
+                    {(nutritionInsights.badges || recipe.nutrition_badges || []).map((badge, idx) => (
+                        <span key={`${badge}-${idx}`} style={styles.nutritionBadge}>{badge}</span>
+                    ))}
+                </div>
+                {(nutritionInsights.fix_my_plate || []).length > 0 && (
+                    <div style={styles.fixList}>
+                        {(nutritionInsights.fix_my_plate || []).map((item, idx) => (
+                            <div key={`${item.metric}-${idx}`} style={styles.fixItem}>
+                                <strong>{item.title}:</strong> {item.action}
+                            </div>
+                        ))}
+                    </div>
+                )}
             </section>
 
             <section style={styles.section} className="fade-up">
@@ -335,16 +674,20 @@ const RecipeDetail = () => {
                             const name = (item?.name || '').trim();
                             return name && name.toLowerCase().includes(ingredientFilter.toLowerCase());
                         })
-                        .map((item, idx) => (
-                            <div key={idx} style={styles.ingredientRow}>
-                                <span style={styles.ingredientName}>{item.name}</span>
-                                <span style={styles.ingredientValue}>{item.display || `${item.needed_g} g`}</span>
-                                <span style={styles.ingredientValue}>{item.have_g}</span>
-                                {item.status === 'have' && <span style={styles.haveBadge}>Available</span>}
-                                {item.status === 'partial' && <span style={styles.partialBadge}>Low stock</span>}
-                                {item.status === 'missing' && <span style={styles.missingBadge}>Missing</span>}
-                            </div>
-                        ))}
+                        .map((item, idx) => {
+                            const assumedSpice = Boolean(item.assumed_available) || isBasicSpice(item.name);
+                            const uiStatus = assumedSpice ? 'have' : item.status;
+                            return (
+                                <div key={idx} style={styles.ingredientRow}>
+                                    <span style={styles.ingredientName}>{item.name}</span>
+                                    <span style={styles.ingredientValue}>{item.display || `${item.needed_g} g`}</span>
+                                    <span style={styles.ingredientValue}>{item.have_g}</span>
+                                    {uiStatus === 'have' && <span style={styles.haveBadge}>Available</span>}
+                                    {uiStatus === 'partial' && <span style={styles.partialBadge}>Low stock</span>}
+                                    {uiStatus === 'missing' && <span style={styles.missingBadge}>Missing</span>}
+                                </div>
+                            );
+                        })}
                 </div>
             </section>
 
@@ -359,11 +702,11 @@ const RecipeDetail = () => {
                 </section>
             )}
 
-            {recipe.missing_ingredients?.length > 0 && (
+            {filteredMissingIngredients.length > 0 && (
                 <section style={styles.section} className="fade-up">
                     <h2 style={styles.sectionTitle}><AlertTriangle size={18} /> Missing Ingredients</h2>
                     <div style={styles.missingList}>
-                        {(recipe.missing_ingredients || []).filter(Boolean).map((item, idx) => (
+                        {filteredMissingIngredients.map((item, idx) => (
                             <span key={idx} style={styles.missingTag}>{item}</span>
                         ))}
                     </div>
@@ -406,10 +749,109 @@ const RecipeDetail = () => {
             )}
 
             <section style={styles.section} className="fade-up">
-                <h2 style={styles.sectionTitle}>Steps</h2>
+                <div style={styles.stepsHeader}>
+                    <h2 style={styles.sectionTitle}>Steps</h2>
+                    <div style={styles.stepsControls}>
+                        <div style={styles.rateGroup}>
+                            {[0.5, 1, 1.5].map((rate) => (
+                                <button
+                                    key={rate}
+                                    type="button"
+                                    style={speechRate === rate ? { ...styles.rateBtn, ...styles.rateBtnActive } : styles.rateBtn}
+                                    onClick={() => handleRateChange(rate)}
+                                    onMouseEnter={() => setHoveredVoiceControl(`rate-${rate}`)}
+                                    onMouseLeave={() => setHoveredVoiceControl('')}
+                                >
+                                    {rate}x
+                                </button>
+                            ))}
+                        </div>
+                        <div style={styles.rateGroup}>
+                            {[{ id: 'en', label: 'English' }, { id: 'ml', label: translationLoading ? 'Malayalam...' : 'Malayalam' }].map((langOption) => (
+                                <button
+                                    key={langOption.id}
+                                    type="button"
+                                    style={speechLanguage === langOption.id ? { ...styles.rateBtn, ...styles.rateBtnActive } : styles.rateBtn}
+                                    onClick={async () => {
+                                        if (langOption.id === 'ml') {
+                                            const ready = await loadMalayalamTranslation(recipeSteps);
+                                            if (!ready) return;
+                                        }
+                                        setSpeechLanguage(langOption.id);
+                                    }}
+                                    onMouseEnter={() => setHoveredVoiceControl(`lang-${langOption.id}`)}
+                                    onMouseLeave={() => setHoveredVoiceControl('')}
+                                    disabled={translationLoading}
+                                >
+                                    {langOption.label}
+                                </button>
+                            ))}
+                        </div>
+                        <button
+                            type="button"
+                            style={getVoiceButtonStyle('read')}
+                            onClick={handleReadSteps}
+                            onMouseEnter={() => setHoveredVoiceControl('read')}
+                            onMouseLeave={() => setHoveredVoiceControl('')}
+                            disabled={!supportsSpeech || !recipeSteps.length}
+                        >
+                            <Play size={16} /> Read Steps
+                        </button>
+                        <button
+                            type="button"
+                            style={getVoiceButtonStyle('previous')}
+                            onClick={() => handleStepNavigation(-1)}
+                            onMouseEnter={() => setHoveredVoiceControl('previous')}
+                            onMouseLeave={() => setHoveredVoiceControl('')}
+                            disabled={!supportsSpeech || !recipeSteps.length}
+                        >
+                            <SkipBack size={16} /> Previous Step
+                        </button>
+                        <button
+                            type="button"
+                            style={getVoiceButtonStyle('next')}
+                            onClick={() => handleStepNavigation(1)}
+                            onMouseEnter={() => setHoveredVoiceControl('next')}
+                            onMouseLeave={() => setHoveredVoiceControl('')}
+                            disabled={!supportsSpeech || !recipeSteps.length}
+                        >
+                            <SkipForward size={16} /> Next Step
+                        </button>
+                        <button
+                            type="button"
+                            style={getVoiceButtonStyle('pause')}
+                            onClick={handlePauseResume}
+                            onMouseEnter={() => setHoveredVoiceControl('pause')}
+                            onMouseLeave={() => setHoveredVoiceControl('')}
+                            disabled={!supportsSpeech || !isReadingSteps}
+                        >
+                            <Pause size={16} /> {isSpeechPaused ? 'Resume' : 'Pause'}
+                        </button>
+                        <button
+                            type="button"
+                            style={getVoiceButtonStyle('stop')}
+                            onClick={stopReadingSteps}
+                            onMouseEnter={() => setHoveredVoiceControl('stop')}
+                            onMouseLeave={() => setHoveredVoiceControl('')}
+                            disabled={!supportsSpeech || !isReadingSteps}
+                        >
+                            <Square size={16} /> Stop
+                        </button>
+                    </div>
+                </div>
+                {!supportsSpeech && <div style={styles.stepVoiceHint}>Voice reading is not supported in this browser.</div>}
+                {supportsSpeech && translationError && <div style={styles.stepVoiceHint}>{translationError}</div>}
+                {supportsSpeech && recipeSteps.length > 0 && activeStepIndex >= 0 && (
+                    <div style={styles.stepVoiceHint}>
+                        Current step: {activeStepIndex + 1} of {recipeSteps.length} | Audio: {speechLanguage === 'ml' ? 'Malayalam' : 'English'}
+                    </div>
+                )}
                 <ol style={styles.stepList}>
-                    {(recipe.steps || []).filter((s) => s.trim()).slice(0, 12).map((step, idx) => (
-                        <li key={idx} style={styles.stepItem}>{step}</li>
+                    {recipeSteps.map((step, idx) => (
+                        <li key={idx} style={activeStepIndex === idx ? { ...styles.stepItem, ...styles.stepItemActive } : styles.stepItem}>
+                            <span style={styles.stepIndexBadge}>{idx + 1}</span>
+                            <span style={styles.stepText}>{step}</span>
+                        </li>
                     ))}
                 </ol>
             </section>
@@ -434,6 +876,16 @@ const RecipeDetail = () => {
                     {cookResult.nutrition_scoring && (
                         <div style={styles.cookLine}>
                             Score: {cookResult.nutrition_scoring.daily_score} today · Weekly avg {Math.round(cookResult.nutrition_scoring.weekly_score || 0)} · L{cookResult.nutrition_scoring.level} ({cookResult.nutrition_scoring.points} pts)
+                        </div>
+                    )}
+                    {(cookResult.nutrition_insights?.badges || []).length > 0 && (
+                        <div style={styles.cookLine}>
+                            Badges: {(cookResult.nutrition_insights.badges || []).join(', ')}
+                        </div>
+                    )}
+                    {(cookResult.nutrition_insights?.fix_my_plate || []).length > 0 && (
+                        <div style={styles.cookLine}>
+                            Next step: {cookResult.nutrition_insights.fix_my_plate[0]?.action}
                         </div>
                     )}
                 </div>
@@ -517,6 +969,11 @@ const styles = {
     sectionTitle: { fontSize: '1.4rem', marginBottom: '0.8rem', color: 'var(--color-text)', display: 'flex', alignItems: 'center', gap: '0.5rem' },
     nutritionGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' },
     nutritionCard: { background: 'var(--color-surface)', borderRadius: '12px', padding: '12px', border: '1px solid var(--color-border)', display: 'flex', gap: '8px', alignItems: 'center' },
+    nutritionMetaRow: { display: 'flex', flexWrap: 'wrap', gap: '0.45rem', marginTop: '0.8rem' },
+    nutritionScorePill: { background: 'rgba(225,29,46,0.12)', color: 'var(--color-primary)', border: '1px solid rgba(225,29,46,0.24)', borderRadius: '999px', padding: '6px 10px', fontSize: '0.82rem', fontWeight: '700' },
+    nutritionBadge: { background: 'rgba(17,17,17,0.08)', color: 'var(--color-text)', border: '1px solid var(--color-border)', borderRadius: '999px', padding: '6px 10px', fontSize: '0.82rem' },
+    fixList: { display: 'grid', gap: '0.45rem', marginTop: '0.8rem' },
+    fixItem: { background: 'var(--color-surface-2)', border: '1px solid var(--color-border)', borderRadius: '10px', padding: '8px 10px', color: 'var(--color-text-light)', fontSize: '0.87rem' },
     searchRow: { display: 'flex', alignItems: 'center', gap: '8px', background: 'var(--color-surface-2)', border: '1px solid var(--color-border)', borderRadius: '999px', padding: '8px 14px', marginBottom: '1rem' },
     searchInput: { border: 'none', outline: 'none', background: 'transparent', color: 'var(--color-text)', flex: 1 },
     ingredientTable: { display: 'grid', gap: '0.6rem' },
@@ -541,8 +998,19 @@ const styles = {
     substitutionOptions: { display: 'flex', flexWrap: 'wrap', gap: '0.5rem' },
     subOption: { background: '#fff', border: '1px solid var(--color-border)', borderRadius: '999px', padding: '6px 10px', fontSize: '0.8rem', color: 'var(--color-text-light)' },
     subOptionActive: { background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.3)', color: '#15803d', borderRadius: '999px', padding: '6px 10px', fontSize: '0.8rem' },
-    stepList: { paddingLeft: '1.2rem', color: 'var(--color-text)' },
-    stepItem: { marginBottom: '0.6rem' },
+    stepsHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', flexWrap: 'wrap', marginBottom: '0.8rem' },
+    stepsControls: { display: 'flex', alignItems: 'center', gap: '0.55rem', flexWrap: 'wrap' },
+    rateGroup: { display: 'inline-flex', alignItems: 'center', gap: '0.35rem', padding: '4px', borderRadius: '999px', border: '1px solid var(--color-border)', background: 'var(--color-surface)' },
+    rateBtn: { border: 'none', background: 'transparent', color: 'var(--color-text-light)', borderRadius: '999px', padding: '7px 10px', fontWeight: 700, cursor: 'pointer', transition: 'all 0.18s ease' },
+    rateBtnActive: { background: 'rgba(225,29,46,0.12)', color: 'var(--color-primary)' },
+    stepActionBtn: { border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text)', borderRadius: '10px', padding: '9px 12px', fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px', transition: 'all 0.18s ease' },
+    stepActionBtnHover: { background: 'rgba(225,29,46,0.1)', color: 'var(--color-primary)', border: '1px solid rgba(225,29,46,0.3)' },
+    stepVoiceHint: { color: 'var(--color-text-light)', fontSize: '0.88rem', marginBottom: '0.75rem' },
+    stepList: { paddingLeft: 0, margin: 0, listStyle: 'none', color: 'var(--color-text)', display: 'grid', gap: '0.75rem' },
+    stepItem: { marginBottom: 0, display: 'grid', gridTemplateColumns: '38px 1fr', gap: '0.85rem', alignItems: 'flex-start', padding: '12px 14px', borderRadius: '14px', border: '1px solid var(--color-border)', background: 'var(--color-surface)' },
+    stepItemActive: { border: '1px solid rgba(225,29,46,0.34)', background: 'rgba(225,29,46,0.06)', boxShadow: '0 10px 24px rgba(225,29,46,0.08)' },
+    stepIndexBadge: { width: '30px', height: '30px', borderRadius: '50%', background: 'rgba(17,17,17,0.08)', color: 'var(--color-text)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: '0.9rem' },
+    stepText: { lineHeight: 1.6 },
     cookResult: { marginTop: '1.5rem', background: 'var(--color-surface)', borderRadius: '12px', padding: '12px', border: '1px solid var(--color-border)' },
     cookResultTitle: { fontWeight: '700', marginBottom: '0.4rem' },
     cookLine: { color: 'var(--color-text-light)', fontSize: '0.95rem' },

@@ -13,7 +13,7 @@ class RecommenderNameCleanupTests(SimpleTestCase):
 
     def test_parse_recipe_ingredients_emits_clean_names(self):
         recommender = MealRecommender()
-        parsed, names, _, _, _ = recommender._parse_recipe_ingredients(
+        parsed, names, _, _ = recommender._parse_recipe_ingredients(
             "2 Green chillies,2 Ginger Garlic Paste,3 Tomatoes"
         )
         parsed_names = [item["name"] for item in parsed]

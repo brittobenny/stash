@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
     ChefHat,
+    Download,
     RefreshCw,
     Sparkles,
     Flame,
@@ -11,9 +12,19 @@ import {
     Search,
 } from 'lucide-react';
 import { recipeService, pantryService } from '../services/api';
+import { downloadRecipePdf } from '../utils/recipePdf';
+import cookLoaderPrimary from '../assets/cook-loader-primary.mp4';
+import cookLoaderSecondary from '../assets/cook-loader-secondary.mp4';
 import '../styles/global.css';
 
 let cookPageMemory = null;
+const LOADING_PHASES = [
+    { label: 'Scanning pantry', detail: 'Reading ingredient quantities and freshness.' },
+    { label: 'Finding matches', detail: 'Comparing your pantry with recipe requirements.' },
+    { label: 'Scoring nutrition', detail: 'Ranking meals by quality and balance.' },
+    { label: 'Building cards', detail: 'Preparing the best recipes for display.' },
+];
+
 const getUserCacheKey = () => {
     try {
         const rawUser = localStorage.getItem('user');
@@ -38,6 +49,8 @@ const Cook = () => {
     const [pantryItems, setPantryItems] = useState([]);
     const [selectedIngredients, setSelectedIngredients] = useState([]);
     const [ingredientSearch, setIngredientSearch] = useState('');
+    const [loadingPhaseIndex, setLoadingPhaseIndex] = useState(0);
+    const [downloadingRecipeId, setDownloadingRecipeId] = useState(null);
 
     const fetchRecommendations = async (selection = null) => {
         setRecsError('');
@@ -93,6 +106,17 @@ const Cook = () => {
         };
     }, [cacheKey, recommendations, pantryItems, selectedIngredients, ingredientSearch]);
 
+    useEffect(() => {
+        if (!recsLoading) {
+            setLoadingPhaseIndex(0);
+            return;
+        }
+        const timer = setInterval(() => {
+            setLoadingPhaseIndex((prev) => (prev + 1) % LOADING_PHASES.length);
+        }, 1050);
+        return () => clearInterval(timer);
+    }, [recsLoading]);
+
     const availableNames = useMemo(
         () => pantryItems.map((i) => i.ingredient_name).filter(Boolean),
         [pantryItems]
@@ -142,10 +166,37 @@ const Cook = () => {
         setSelectedIngredients([]);
     };
 
-    const getRecipeImage = (url) => {
-        const localFallback = '/api/category-image/vegetable/';
-        if (!url || !/^https?:\/\//i.test(url)) return localFallback;
-        return `/api/image-proxy/?url=${encodeURIComponent(url.trim())}`;
+    const handleDownloadRecipe = async (recipeId) => {
+        setRecsError('');
+        setDownloadingRecipeId(recipeId);
+        try {
+            const res = await recipeService.getRecipeDetail(recipeId);
+            const ok = downloadRecipePdf(res.data);
+            if (!ok) {
+                setRecsError('Popup blocked. Allow popups to download the recipe as PDF.');
+            }
+        } catch (err) {
+            setRecsError('Unable to prepare the recipe PDF. Try again.');
+        } finally {
+            setDownloadingRecipeId(null);
+        }
+    };
+
+    const buildFallbackSourceUrl = (recipeName) => {
+        const name = String(recipeName || '').trim().toLowerCase();
+        const query = encodeURIComponent(name ? `${name} indian food recipe` : 'indian food recipe');
+        return `/api/live-recipe-image/?q=${query}&fallback=${encodeURIComponent('/api/category-image/vegetable/')}`;
+    };
+
+    const buildRecipeFallback = (recipeName) => {
+        return `/api/image-proxy/?fallback=${encodeURIComponent(buildFallbackSourceUrl(recipeName))}`;
+    };
+
+    const getRecipeImage = (recipe) => {
+        const rawUrl = String(recipe?.image_url || '').trim();
+        const fallbackProxy = buildRecipeFallback(recipe?.name);
+        if (!rawUrl || !/^https?:\/\//i.test(rawUrl)) return fallbackProxy;
+        return `/api/image-proxy/?url=${encodeURIComponent(rawUrl)}&fallback=${encodeURIComponent(buildFallbackSourceUrl(recipe?.name))}`;
     };
 
     const getMatchTone = (percent) => {
@@ -154,6 +205,9 @@ const Cook = () => {
         if (p >= 45) return styles.matchMid;
         return styles.matchLow;
     };
+
+    const activeLoaderVideo = loadingPhaseIndex % 2 === 0 ? cookLoaderPrimary : cookLoaderSecondary;
+    const previewLoaderVideo = loadingPhaseIndex % 2 === 0 ? cookLoaderSecondary : cookLoaderPrimary;
 
     return (
         <div style={styles.page}>
@@ -262,23 +316,80 @@ const Cook = () => {
                 <section style={styles.resultsSection}>
                     {recsLoading ? (
                         <div style={styles.aiLoadingStage} className="fade-up">
-                            <div style={styles.aiOrbitalWrap}>
-                                <div style={styles.aiCore} className="cook-ai-pulse">
-                                    <Sparkles size={24} />
-                                </div>
-                                <div style={styles.aiOrbitRing} className="cook-ai-spin">
-                                    <span style={{ ...styles.aiOrbitDot, ...styles.aiDotOne }} />
-                                    <span style={{ ...styles.aiOrbitDot, ...styles.aiDotTwo }} />
-                                    <span style={{ ...styles.aiOrbitDot, ...styles.aiDotThree }} />
-                                </div>
+                            <div style={styles.aiVideoBackdrop}>
+                                <video
+                                    key={activeLoaderVideo}
+                                    style={styles.aiVideo}
+                                    src={activeLoaderVideo}
+                                    autoPlay
+                                    muted
+                                    loop
+                                    playsInline
+                                />
+                                <div style={styles.aiVideoOverlay} />
                             </div>
-                            <div style={styles.aiTextBlock}>
-                                <div style={styles.aiTitle}>Preparing your recommendations...</div>
-                                <div style={styles.aiSub}>Matching pantry inventory, checking substitutions, and ranking top 10 recipes.</div>
+
+                            <div style={styles.aiLoaderContent}>
+                                <div style={styles.aiHeaderRow}>
+                                    <div style={styles.aiPulseDot} className="cook-loader-breathe" />
+                                    <div style={styles.aiTextBlock}>
+                                        <div style={styles.aiTitle}>{LOADING_PHASES[loadingPhaseIndex].label}</div>
+                                        <div style={styles.aiSub}>{LOADING_PHASES[loadingPhaseIndex].detail}</div>
+                                    </div>
+                                    <div style={styles.aiPercent}>
+                                        {Math.round(((loadingPhaseIndex + 1) / LOADING_PHASES.length) * 100)}%
+                                    </div>
+                                </div>
+
+                                <div style={styles.aiProgressTrack}>
+                                    <div
+                                        style={{
+                                            ...styles.aiProgressFill,
+                                            width: `${((loadingPhaseIndex + 1) / LOADING_PHASES.length) * 100}%`,
+                                        }}
+                                        className="cook-loader-progress"
+                                    />
+                                </div>
+
                                 <div style={styles.aiSteps}>
-                                    <span style={styles.aiStepPill}>Analyzing ingredients</span>
-                                    <span style={styles.aiStepPill}>Scoring nutrition fit</span>
-                                    <span style={styles.aiStepPill}>Finalizing best matches</span>
+                                    {LOADING_PHASES.map((step, idx) => (
+                                        <span
+                                            key={step.label}
+                                            style={
+                                                idx <= loadingPhaseIndex
+                                                    ? { ...styles.aiStepPill, ...styles.aiStepPillActive }
+                                                    : styles.aiStepPill
+                                            }
+                                        >
+                                            {step.label}
+                                        </span>
+                                    ))}
+                                </div>
+
+                                <div style={styles.aiCinemaRow} className="cook-ai-cinema-row">
+                                    <div style={styles.aiCinemaCard}>
+                                        <div style={styles.aiCinemaLabel}>Kitchen preview</div>
+                                        <video
+                                            key={previewLoaderVideo}
+                                            style={styles.aiPreviewVideo}
+                                            src={previewLoaderVideo}
+                                            autoPlay
+                                            muted
+                                            loop
+                                            playsInline
+                                        />
+                                    </div>
+                                    <div style={styles.aiCinemaCopy}>
+                                        <div style={styles.aiCinemaHeadline}>Building your recipe board</div>
+                                        <div style={styles.aiFooterNote}>
+                                            Preparing recipe cards with live image lookups, ingredient checks, and nutrition scores.
+                                        </div>
+                                        <div style={styles.aiCinemaMiniNotes}>
+                                            <span style={styles.aiMiniNote}>Real pantry quantities</span>
+                                            <span style={styles.aiMiniNote}>Hero ingredient checks</span>
+                                            <span style={styles.aiMiniNote}>Balanced nutrition scoring</span>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -287,7 +398,8 @@ const Cook = () => {
                     ) : (
                         <div style={styles.recipeGrid}>
                             {recommendations.map((recipe, index) => {
-                                const imgSrc = getRecipeImage(recipe.image_url);
+                                const imgSrc = getRecipeImage(recipe);
+                                const fallbackSrc = buildRecipeFallback(recipe.name);
                                 return (
                                     <article
                                         key={recipe.id}
@@ -299,7 +411,15 @@ const Cook = () => {
                                                 src={imgSrc}
                                                 alt={recipe.name}
                                                 style={styles.recipeImg}
+                                                data-fallback={fallbackSrc}
                                                 onError={(e) => {
+                                                    const fallback = e.currentTarget.dataset.fallback;
+                                                    if (fallback && e.currentTarget.dataset.triedFallback !== '1') {
+                                                        e.currentTarget.dataset.triedFallback = '1';
+                                                        e.currentTarget.src = fallback;
+                                                        return;
+                                                    }
+                                                    e.currentTarget.onerror = null;
                                                     e.currentTarget.src = '/api/category-image/vegetable/';
                                                 }}
                                             />
@@ -319,6 +439,15 @@ const Cook = () => {
                                                     <span style={styles.metaBadge}>Nutrition {Math.round((recipe.nutrition_score || 0) * 100)}%</span>
                                                 )}
                                             </div>
+                                            {(recipe.nutrition_badges || []).length > 0 && (
+                                                <div style={styles.badgeRow}>
+                                                    {(recipe.nutrition_badges || []).slice(0, 3).map((badge, idx) => (
+                                                        <span key={`${recipe.id}-badge-${idx}`} style={styles.nutritionBadge}>
+                                                            {badge}
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            )}
 
                                             <div style={styles.progressTrack}>
                                                 <div
@@ -329,13 +458,23 @@ const Cook = () => {
                                                 />
                                             </div>
 
-                                            <button
-                                                style={styles.detailBtn}
-                                                onClick={() => navigate(`/customer/recipes/${recipe.id}`, { state: { from: '/customer/cook' } })}
-                                            >
-                                                <ChefHat size={16} />
-                                                View Details
-                                            </button>
+                                            <div style={styles.actionRow}>
+                                                <button
+                                                    style={styles.secondaryBtn}
+                                                    onClick={() => handleDownloadRecipe(recipe.id)}
+                                                    disabled={downloadingRecipeId === recipe.id}
+                                                >
+                                                    <Download size={16} />
+                                                    {downloadingRecipeId === recipe.id ? 'Preparing PDF...' : 'Download PDF'}
+                                                </button>
+                                                <button
+                                                    style={styles.detailBtn}
+                                                    onClick={() => navigate(`/customer/recipes/${recipe.id}`, { state: { from: '/customer/cook' } })}
+                                                >
+                                                    <ChefHat size={16} />
+                                                    View Details
+                                                </button>
+                                            </div>
                                         </div>
                                     </article>
                                 );
@@ -510,12 +649,10 @@ const styles = {
     },
     resultsSection: { minHeight: '280px' },
     aiLoadingStage: {
-        minHeight: '320px',
+        minHeight: '360px',
         display: 'flex',
         flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: '1.2rem',
+        gap: '0.95rem',
         padding: '1.4rem',
         borderRadius: '18px',
         border: '1px solid rgba(225,29,46,0.2)',
@@ -523,52 +660,136 @@ const styles = {
         position: 'relative',
         overflow: 'hidden',
     },
-    aiOrbitalWrap: {
-        position: 'relative',
-        width: '140px',
-        height: '140px',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    aiCore: {
-        width: '66px',
-        height: '66px',
-        borderRadius: '50%',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        color: '#fff',
-        background: 'linear-gradient(145deg, #e11d2e, #f97316)',
-        boxShadow: '0 16px 30px rgba(225,29,46,0.35)',
-        zIndex: 2,
-    },
-    aiOrbitRing: {
+    aiVideoBackdrop: {
         position: 'absolute',
         inset: 0,
-        borderRadius: '50%',
-        border: '2px dashed rgba(225,29,46,0.3)',
     },
-    aiOrbitDot: {
+    aiVideo: {
+        width: '100%',
+        height: '100%',
+        objectFit: 'cover',
+        display: 'block',
+    },
+    aiVideoOverlay: {
         position: 'absolute',
-        width: '12px',
-        height: '12px',
-        borderRadius: '50%',
+        inset: 0,
+        background: 'linear-gradient(135deg, rgba(15,15,15,0.72), rgba(15,15,15,0.48) 45%, rgba(120,24,24,0.44))',
+        backdropFilter: 'blur(2px)',
     },
-    aiDotOne: { top: '-6px', left: '50%', marginLeft: '-6px', background: '#ef4444' },
-    aiDotTwo: { left: '-6px', top: '50%', marginTop: '-6px', background: '#f59e0b' },
-    aiDotThree: { right: '-6px', top: '50%', marginTop: '-6px', background: '#22c55e' },
-    aiTextBlock: { textAlign: 'center', maxWidth: '620px' },
-    aiTitle: { fontWeight: 800, fontSize: '1.18rem', color: 'var(--color-text)' },
-    aiSub: { color: 'var(--color-text-light)', marginTop: '0.3rem' },
-    aiSteps: { marginTop: '0.9rem', display: 'flex', gap: '0.45rem', justifyContent: 'center', flexWrap: 'wrap' },
+    aiLoaderContent: {
+        position: 'relative',
+        zIndex: 1,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '0.95rem',
+        height: '100%',
+    },
+    aiHeaderRow: {
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: '0.9rem',
+    },
+    aiPulseDot: {
+        width: '16px',
+        height: '16px',
+        borderRadius: '50%',
+        background: 'linear-gradient(145deg, #e11d2e, #f97316)',
+        boxShadow: '0 0 0 0 rgba(225,29,46,0.45)',
+        flexShrink: 0,
+    },
+    aiTextBlock: { flex: 1, minWidth: 0 },
+    aiTitle: { fontWeight: 800, fontSize: '1.05rem', color: '#fff' },
+    aiSub: { color: 'rgba(255,255,255,0.8)', marginTop: '0.15rem', fontSize: '0.9rem' },
+    aiPercent: {
+        borderRadius: '999px',
+        border: '1px solid rgba(255,255,255,0.18)',
+        background: 'rgba(255,255,255,0.12)',
+        color: '#fff',
+        fontWeight: 700,
+        fontSize: '0.82rem',
+        padding: '6px 10px',
+        flexShrink: 0,
+    },
+    aiProgressTrack: {
+        width: '100%',
+        height: '7px',
+        borderRadius: '999px',
+        overflow: 'hidden',
+        background: 'rgba(255,255,255,0.18)',
+    },
+    aiProgressFill: {
+        height: '100%',
+        borderRadius: '999px',
+        background: 'linear-gradient(90deg, #f97316 0%, #e11d2e 70%, #991b1b 100%)',
+    },
+    aiSteps: { display: 'flex', gap: '0.45rem', flexWrap: 'wrap' },
     aiStepPill: {
         borderRadius: '999px',
         padding: '6px 10px',
         fontSize: '0.78rem',
-        background: 'linear-gradient(90deg, rgba(225,29,46,0.12), rgba(249,115,22,0.15))',
-        color: 'var(--color-text)',
-        border: '1px solid rgba(225,29,46,0.2)',
+        background: 'rgba(255,255,255,0.08)',
+        color: 'rgba(255,255,255,0.78)',
+        border: '1px solid rgba(255,255,255,0.14)',
+    },
+    aiStepPillActive: {
+        background: 'linear-gradient(90deg, rgba(225,29,46,0.28), rgba(249,115,22,0.24))',
+        color: '#fff',
+        border: '1px solid rgba(255,255,255,0.16)',
+    },
+    aiCinemaRow: {
+        display: 'grid',
+        gridTemplateColumns: 'minmax(220px, 300px) 1fr',
+        gap: '0.75rem',
+        width: '100%',
+        marginTop: '0.15rem',
+        alignItems: 'stretch',
+    },
+    aiCinemaCard: {
+        borderRadius: '14px',
+        border: '1px solid rgba(255,255,255,0.12)',
+        background: 'rgba(255,255,255,0.08)',
+        overflow: 'hidden',
+        backdropFilter: 'blur(8px)',
+    },
+    aiCinemaLabel: {
+        padding: '0.75rem 0.85rem 0.35rem',
+        color: 'rgba(255,255,255,0.82)',
+        fontSize: '0.76rem',
+        fontWeight: 700,
+        letterSpacing: '0.08em',
+        textTransform: 'uppercase',
+    },
+    aiPreviewVideo: {
+        width: '100%',
+        height: '190px',
+        objectFit: 'cover',
+        display: 'block',
+    },
+    aiCinemaCopy: {
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'flex-end',
+        gap: '0.55rem',
+        padding: '0.9rem 0.2rem 0.2rem',
+    },
+    aiCinemaHeadline: {
+        fontSize: '1.35rem',
+        lineHeight: 1.15,
+        fontWeight: 800,
+        color: '#fff',
+        maxWidth: '460px',
+    },
+    aiFooterNote: { fontSize: '0.88rem', color: 'rgba(255,255,255,0.78)', maxWidth: '520px' },
+    aiCinemaMiniNotes: { display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '0.15rem' },
+    aiMiniNote: {
+        borderRadius: '999px',
+        padding: '6px 10px',
+        border: '1px solid rgba(255,255,255,0.12)',
+        background: 'rgba(255,255,255,0.08)',
+        color: 'rgba(255,255,255,0.84)',
+        fontSize: '0.76rem',
+        fontWeight: 600,
     },
     emptyState: {
         borderRadius: '16px',
@@ -638,6 +859,16 @@ const styles = {
         alignItems: 'center',
         gap: '5px',
     },
+    badgeRow: { display: 'flex', flexWrap: 'wrap', gap: '0.4rem', marginTop: '0.55rem' },
+    nutritionBadge: {
+        borderRadius: '999px',
+        background: 'rgba(22,163,74,0.12)',
+        color: '#166534',
+        border: '1px solid rgba(22,163,74,0.28)',
+        padding: '3px 8px',
+        fontSize: '0.74rem',
+        fontWeight: 700,
+    },
     progressTrack: {
         marginTop: '0.75rem',
         height: '6px',
@@ -651,12 +882,30 @@ const styles = {
         background: 'linear-gradient(90deg, #f97316 0%, #e11d2e 70%, #991b1b 100%)',
     },
     detailBtn: {
-        width: '100%',
-        marginTop: '0.8rem',
+        flex: 1,
         borderRadius: '10px',
         border: 'none',
         background: 'var(--color-primary)',
         color: '#fff',
+        padding: '10px 12px',
+        fontWeight: 700,
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: '6px',
+        cursor: 'pointer',
+    },
+    actionRow: {
+        marginTop: '0.8rem',
+        display: 'flex',
+        gap: '0.55rem',
+    },
+    secondaryBtn: {
+        flex: 1,
+        borderRadius: '10px',
+        border: '1px solid var(--color-border)',
+        background: 'var(--color-surface-2)',
+        color: 'var(--color-text)',
         padding: '10px 12px',
         fontWeight: 700,
         display: 'inline-flex',
@@ -671,16 +920,26 @@ if (typeof document !== 'undefined' && !document.getElementById('cook-ai-loader-
     const styleSheet = document.createElement('style');
     styleSheet.id = 'cook-ai-loader-styles';
     styleSheet.innerText = `
-      @keyframes cookAiSpin {
-        from { transform: rotate(0deg); }
-        to { transform: rotate(360deg); }
+      @keyframes cookLoaderBreathe {
+        0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(225,29,46,0.45); }
+        50% { transform: scale(1.15); box-shadow: 0 0 0 8px rgba(249,115,22,0.14); }
       }
-      @keyframes cookAiPulse {
-        0%, 100% { transform: scale(1); box-shadow: 0 14px 26px rgba(225,29,46,0.26); }
-        50% { transform: scale(1.06); box-shadow: 0 20px 34px rgba(249,115,22,0.34); }
+      @keyframes cookLoaderShimmer {
+        0% { background-position: 180% 0; }
+        100% { background-position: -180% 0; }
       }
-      .cook-ai-spin { animation: cookAiSpin 4.8s linear infinite; }
-      .cook-ai-pulse { animation: cookAiPulse 1.8s ease-in-out infinite; }
+      .cook-loader-breathe { animation: cookLoaderBreathe 1.7s ease-in-out infinite; }
+      .cook-loader-progress { transition: width 320ms ease; }
+      .cook-loader-shimmer {
+        background-image: linear-gradient(90deg, #e6dfdf 8%, #f3efef 50%, #e6dfdf 92%);
+        background-size: 220% 100%;
+        animation: cookLoaderShimmer 1.45s ease-in-out infinite;
+      }
+      @media (max-width: 760px) {
+        .cook-ai-cinema-row {
+          grid-template-columns: 1fr !important;
+        }
+      }
     `;
     document.head.appendChild(styleSheet);
 }

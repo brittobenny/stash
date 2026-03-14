@@ -115,6 +115,13 @@ export const recipeService = {
         const params = scale && scale !== 1 ? { scale } : {};
         return api.get(`/recipes/${recipeId}/`, { params });
     },
+    translateSteps: (steps = [], target_lang = 'ml', source_lang = 'en') =>
+        api.post('/translate-steps/', { steps, target_lang, source_lang }),
+    fetchStepTts: (text, lang = 'ml') =>
+        api.get('/step-tts/', {
+            params: { text, lang },
+            responseType: 'blob',
+        }),
     cookRecipe: (recipeId, allowPartial = false, ingredients = null, scale = 1) =>
         api.post('/cook/', { recipe_id: recipeId, allow_partial: allowPartial, ingredients, scale }),
 };

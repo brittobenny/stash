@@ -37,4 +37,37 @@ class ComputeStrictRecipeMatchTests(SimpleTestCase):
             pantry_ingredients=["chicken breast", "salt"],
             pantry_quantities=[500, 10],
         )
-        self.assertEqual(result, {"score": 85.71, "status": "COOK_NOW"})
+        self.assertEqual(result, {"score": 83.33, "status": "COOK_NOW"})
+
+    def test_multi_hero_requires_all_key_ingredients(self):
+        result = compute_strict_recipe_match(
+            recipe_ingredients=["chicken", "rice", "salt", "oil"],
+            recipe_quantities=[300, 250, 5, 10],
+            hero_ingredient=["chicken", "rice"],
+            pantry_ingredients=["chicken breast", "salt", "oil"],
+            pantry_quantities=[300, 10, 20],
+        )
+        self.assertEqual(result, {"score": 0.0, "status": "NEEDS_KEY_INGREDIENT"})
+
+    def test_multi_hero_passes_when_all_heroes_are_present(self):
+        result = compute_strict_recipe_match(
+            recipe_ingredients=["chicken", "rice", "salt", "oil"],
+            recipe_quantities=[300, 250, 5, 10],
+            hero_ingredient=["chicken", "rice"],
+            pantry_ingredients=["chicken breast", "basmati rice", "salt"],
+            pantry_quantities=[300, 300, 10],
+        )
+        self.assertEqual(result, {"score": 90.91, "status": "COOK_NOW"})
+
+    def test_basic_spices_are_not_returned_as_missing(self):
+        result = compute_strict_recipe_match(
+            recipe_ingredients=["chicken", "salt", "turmeric powder"],
+            recipe_quantities=[300, 5, 2],
+            hero_ingredient="chicken",
+            pantry_ingredients=["chicken breast"],
+            pantry_quantities=[300],
+            return_details=True,
+        )
+        self.assertEqual(result["score"], 100.0)
+        self.assertEqual(result["status"], "COOK_NOW")
+        self.assertEqual(result["missing_ingredients"], [])

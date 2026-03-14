@@ -26,8 +26,6 @@ const Pantry = () => {
     const [savingItem, setSavingItem] = useState(null);
 
     useEffect(() => {
-        const user = JSON.parse(localStorage.getItem('user') || '{}');
-        console.log('Current User:', user);
         fetchPantry();
         fetchIngredients();
     }, []);

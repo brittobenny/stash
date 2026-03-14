@@ -187,8 +187,8 @@ const styles = {
     },
     iconRow: { display: 'flex', gap: '0.5rem', alignItems: 'center' },
     iconBtn: {
-        width: '38px',
-        height: '38px',
+        width: '34px',
+        height: '34px',
         borderRadius: '999px',
         border: '1px solid var(--color-border)',
         background: 'var(--color-surface-2)',
@@ -211,7 +211,13 @@ const styles = {
         padding: '2px 6px',
         boxShadow: '0 6px 12px rgba(225,29,46,0.25)',
     },
-    avatarImg: { width: '26px', height: '26px', borderRadius: '50%', objectFit: 'cover' },
+    avatarImg: {
+        width: '20px',
+        height: '20px',
+        borderRadius: '50%',
+        objectFit: 'cover',
+        border: '1px solid rgba(0,0,0,0.08)',
+    },
     logoutBtn: {
         display: 'flex',
         alignItems: 'center',

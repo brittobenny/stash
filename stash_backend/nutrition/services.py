@@ -48,6 +48,29 @@ VEGETABLE_KEYWORDS = {
 
 STREAK_MILESTONES = (3, 7, 14, 30)
 
+# Product-facing goal targets for progress cards and suggestions.
+GOAL_TARGETS = {
+    "calories": 2000.0,
+    "protein": 90.0,
+    "carbs": 250.0,
+    "fats": 70.0,
+    "vegetable_servings": 5.0,
+}
+
+RECIPE_BADGE_RULES = (
+    ("High Protein", lambda t: _to_float(t.get("protein")) >= 25.0),
+    ("Fiber Rich", lambda t: _to_float(t.get("vegetable_servings")) >= 2.0),
+    ("Low Calorie", lambda t: _to_float(t.get("calories")) <= 450.0),
+    (
+        "Balanced",
+        lambda t: (
+            _to_float(t.get("protein")) >= 20.0
+            and 25.0 <= _to_float(t.get("carbs")) <= 90.0
+            and 8.0 <= _to_float(t.get("fats")) <= 35.0
+        ),
+    ),
+)
+
 
 def _to_float(value) -> float:
     try:
@@ -62,6 +85,186 @@ def _normalize_name(name: str) -> str:
 
 def _clamp(value: float, low: float, high: float) -> float:
     return max(low, min(high, value))
+
+
+def _safe_round(value: float, digits: int = 2) -> float:
+    return round(_to_float(value), digits)
+
+
+def _status_from_progress(value: float, goal: float) -> str:
+    if goal <= 0:
+        return "unknown"
+    ratio = value / goal
+    if ratio < 0.85:
+        return "low"
+    if ratio > 1.2:
+        return "high"
+    return "on_track"
+
+
+def build_goal_progress(
+    totals: dict,
+    goals: dict | None = None,
+) -> dict:
+    goals = goals or GOAL_TARGETS
+    progress = {}
+
+    for metric, goal in goals.items():
+        value = _to_float(totals.get(metric))
+        percent = _clamp((value / max(goal, 1.0)) * 100.0, 0.0, 200.0)
+        progress[metric] = {
+            "value": _safe_round(value, 2),
+            "goal": _safe_round(goal, 2),
+            "percent": _safe_round(percent, 2),
+            "status": _status_from_progress(value, goal),
+            "delta": _safe_round(value - goal, 2),
+        }
+    return progress
+
+
+def build_fix_my_plate_suggestions(
+    totals: dict,
+    goal_progress: dict | None = None,
+) -> list[dict]:
+    progress = goal_progress or build_goal_progress(totals)
+    suggestions: list[dict] = []
+
+    protein = progress.get("protein", {})
+    if protein.get("status") == "low":
+        suggestions.append(
+            {
+                "priority": "high",
+                "metric": "protein",
+                "title": "Boost protein",
+                "action": "Add paneer, eggs, chicken, tofu, or chickpeas.",
+            }
+        )
+
+    vegetables = progress.get("vegetable_servings", {})
+    if vegetables.get("status") == "low":
+        suggestions.append(
+            {
+                "priority": "high",
+                "metric": "vegetable_servings",
+                "title": "Add vegetables",
+                "action": "Include a side salad or one cup cooked vegetables.",
+            }
+        )
+
+    fats = progress.get("fats", {})
+    if fats.get("status") == "high":
+        suggestions.append(
+            {
+                "priority": "medium",
+                "metric": "fats",
+                "title": "Reduce added fat",
+                "action": "Cut 1 tbsp oil/butter or switch to low-oil cooking.",
+            }
+        )
+
+    carbs = progress.get("carbs", {})
+    if carbs.get("status") == "high":
+        suggestions.append(
+            {
+                "priority": "medium",
+                "metric": "carbs",
+                "title": "Balance carbs",
+                "action": "Reduce rice/roti portion and add protein + veggies.",
+            }
+        )
+
+    calories = progress.get("calories", {})
+    if calories.get("status") == "high":
+        suggestions.append(
+            {
+                "priority": "medium",
+                "metric": "calories",
+                "title": "Trim calories",
+                "action": "Smaller portions and fewer fried/add-on items.",
+            }
+        )
+
+    if not suggestions:
+        suggestions.append(
+            {
+                "priority": "low",
+                "metric": "overall",
+                "title": "Great balance",
+                "action": "Keep the same meal pattern and hydration today.",
+            }
+        )
+
+    return suggestions[:4]
+
+
+def build_recipe_nutrition_badges(totals: dict) -> list[str]:
+    badges = [name for name, rule in RECIPE_BADGE_RULES if rule(totals)]
+    return badges[:3]
+
+
+def build_recipe_nutrition_insights(totals: dict) -> dict:
+    normalized_totals = {
+        "calories": _to_float(totals.get("calories")),
+        "protein": _to_float(totals.get("protein")),
+        "carbs": _to_float(totals.get("carbs")),
+        "fats": _to_float(totals.get("fats") if totals.get("fats") is not None else totals.get("fat")),
+        "vegetable_servings": _to_float(totals.get("vegetable_servings")),
+    }
+    score, balanced, _ = _compute_daily_score(normalized_totals)
+    progress = build_goal_progress(normalized_totals)
+    suggestions = build_fix_my_plate_suggestions(normalized_totals, progress)
+    badges = build_recipe_nutrition_badges(normalized_totals)
+    return {
+        "score": score,
+        "balanced": balanced,
+        "badges": badges,
+        "goal_progress": progress,
+        "fix_my_plate": suggestions,
+    }
+
+
+def build_weekly_trend_payload(user, end_day=None, days: int = 7) -> dict:
+    end_day = end_day or timezone.localdate()
+    start_day = end_day - timedelta(days=max(days - 1, 0))
+    points_qs = DailyNutritionScore.objects.filter(
+        user=user,
+        date__range=(start_day, end_day),
+    ).order_by("date")
+
+    points = [{"date": str(row.date), "score": int(row.score)} for row in points_qs]
+    if len(points) < 2:
+        return {"direction": "flat", "delta": 0, "points": points}
+
+    delta = points[-1]["score"] - points[0]["score"]
+    if delta > 3:
+        direction = "up"
+    elif delta < -3:
+        direction = "down"
+    else:
+        direction = "flat"
+    return {"direction": direction, "delta": int(delta), "points": points}
+
+
+def build_daily_comparison_payload(user, day) -> dict:
+    previous_day = day - timedelta(days=1)
+    current = DailyNutritionScore.objects.filter(user=user, date=day).first()
+    previous = DailyNutritionScore.objects.filter(user=user, date=previous_day).first()
+
+    if not current or not previous:
+        return {
+            "available": False,
+            "message": "Not enough history for day-over-day comparison.",
+        }
+
+    payload = {
+        "available": True,
+        "score_delta": int(current.score) - int(previous.score),
+        "calories_delta": _safe_round(current.total_calories - previous.total_calories, 2),
+        "protein_delta": _safe_round(current.total_protein - previous.total_protein, 2),
+        "carbs_delta": _safe_round(current.total_carbs - previous.total_carbs, 2),
+        "fats_delta": _safe_round(current.total_fats - previous.total_fats, 2),
+    }
+    return payload
 
 
 def _metric_ratio(value: float, low: float, high: float, low_penalty: float, high_penalty: float):
@@ -394,6 +597,23 @@ def record_cooked_recipe(user, recipe_id, recipe_name, nutrition_totals, parsed_
     weekly_score = recompute_weekly_score(user, day)
     _apply_gamification(user, log, daily_score, weekly_score)
     profile = _get_or_create_profile(user)
+    today_totals = {
+        "calories": _to_float(daily_score.total_calories),
+        "protein": _to_float(daily_score.total_protein),
+        "carbs": _to_float(daily_score.total_carbs),
+        "fats": _to_float(daily_score.total_fats),
+        "vegetable_servings": _to_float(daily_score.total_vegetable_servings),
+    }
+    daily_goal_progress = build_goal_progress(today_totals)
+    recipe_insights = build_recipe_nutrition_insights(
+        {
+            "calories": _to_float(nutrition_totals.get("calories")),
+            "protein": _to_float(nutrition_totals.get("protein")),
+            "carbs": _to_float(nutrition_totals.get("carbs")),
+            "fats": _to_float(nutrition_totals.get("fat")),
+            "vegetable_servings": vegetable_servings,
+        }
+    )
 
     return {
         "daily_score": daily_score.score,
@@ -404,4 +624,8 @@ def record_cooked_recipe(user, recipe_id, recipe_name, nutrition_totals, parsed_
         "points": profile.points,
         "level": profile.level,
         "current_streak": profile.current_streak,
+        "goal_progress": daily_goal_progress,
+        "fix_my_plate": build_fix_my_plate_suggestions(today_totals, daily_goal_progress),
+        "recipe_badges": recipe_insights.get("badges", []),
+        "recipe_score": recipe_insights.get("score", 0),
     }

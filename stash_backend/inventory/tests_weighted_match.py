@@ -17,8 +17,8 @@ class ComputeRecipeMatchTests(SimpleTestCase):
             user_pantry=user_pantry,
         )
 
-        # Naive score is 75% (3/4), weighted score drops to 25% due to missing hero.
-        self.assertEqual(score, 25.0)
+        # Common spices are ignored, so denominator is smaller; still strongly penalized.
+        self.assertEqual(score, 22.22)
         self.assertLess(score, 75.0)
 
     def test_strict_mode_returns_zero_when_hero_missing(self):
@@ -37,5 +37,23 @@ class ComputeRecipeMatchTests(SimpleTestCase):
             quantities=[5, 50],
             hero_ingredient="onion",
             user_pantry=["table salt", "onion"],
+        )
+        self.assertEqual(score, 100.0)
+
+    def test_multi_hero_penalizes_partial_key_coverage(self):
+        score = compute_recipe_match(
+            recipe_ingredients=["chicken", "rice", "salt", "oil"],
+            quantities=[300, 250, 5, 10],
+            hero_ingredient=["chicken", "rice"],
+            user_pantry=["chicken", "salt", "oil"],
+        )
+        self.assertEqual(score, 27.27)
+
+    def test_basic_spices_are_ignored_in_weighted_score(self):
+        score = compute_recipe_match(
+            recipe_ingredients=["chicken", "salt", "turmeric powder"],
+            quantities=[300, 5, 2],
+            hero_ingredient="chicken",
+            user_pantry=["chicken"],
         )
         self.assertEqual(score, 100.0)

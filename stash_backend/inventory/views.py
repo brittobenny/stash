@@ -1,5 +1,7 @@
 import csv
+import json
 import re
+import html
 from pathlib import Path
 
 from django.db import transaction, models
@@ -11,9 +13,11 @@ from .models import Ingredient, PantryItem, InventoryItem
 from .serializers import PantryItemSerializer
 from .serializers import InventoryItemSerializer
 from .ml.recommender import recommender
+from .ml.hero_ingredient_pipeline import is_basic_spice
 from nutrition.calculator import calculate_nutrition
+from nutrition.services import build_recipe_nutrition_insights
 from .substitutions import find_substitutable_ingredients, normalize_name as normalize_sub_name
-from urllib.parse import urlparse
+from urllib.parse import urlparse, quote_plus, unquote
 from urllib.request import Request, urlopen
 from django.http import HttpResponse, HttpResponseRedirect, FileResponse
 from django.conf import settings
@@ -470,6 +474,13 @@ def parse_bool(val) -> bool:
         return val.strip().lower() in {"1", "true", "yes", "y", "on"}
     return False
 
+
+def _is_household_spice(name: str) -> bool:
+    candidate = normalize_name(name)
+    if not candidate:
+        return False
+    return is_basic_spice(candidate)
+
 def _format_qty(value: float) -> str:
     try:
         num = float(value)
@@ -527,7 +538,15 @@ def build_ingredient_status(pantry_items, parsed_ingredients):
             continue
         needed = float(item.get("grams") or 0)
         have = float(pantry_map.get(ing_name, 0))
-        if have <= 0:
+
+        is_spice = _is_household_spice(ing_name)
+        effective_have = have
+
+        if is_spice:
+            # Treat common household spices as effectively available for UX and matching.
+            effective_have = max(have, needed)
+            status_value = "have"
+        elif have <= 0:
             status_value = "missing"
         elif needed > 0 and have < needed:
             status_value = "partial"
@@ -539,11 +558,172 @@ def build_ingredient_status(pantry_items, parsed_ingredients):
             "quantity": item.get("quantity"),
             "unit": item.get("unit"),
             "needed_g": round(needed, 2),
-            "have_g": round(have, 2),
+            "have_g": round(effective_have, 2),
             "status": status_value,
-            "short_g": round(max(0.0, needed - have), 2),
+            "short_g": round(max(0.0, needed - effective_have), 2),
+            "assumed_available": is_spice,
         })
     return status_list
+
+
+def _resolve_safe_fallback(fallback: str | None) -> str:
+    safe_fallback = "/api/category-image/vegetable/"
+    if not fallback:
+        return safe_fallback
+
+    fallback = str(fallback).strip()
+    if fallback.startswith("/api/category-image/") or fallback.startswith("/api/live-recipe-image/"):
+        return fallback
+    if fallback.startswith("http"):
+        fb_parsed = urlparse(fallback)
+        allowed_fallback_domains = {"source.unsplash.com", "images.unsplash.com", "placehold.co"}
+        if fb_parsed.netloc in allowed_fallback_domains:
+            return fallback
+    return safe_fallback
+
+
+def _translate_text_google(text: str, target_lang: str = "ml", source_lang: str = "en") -> str | None:
+    content = str(text or "").strip()
+    if not content:
+        return ""
+
+    url = (
+        "https://translate.googleapis.com/translate_a/single"
+        f"?client=gtx&sl={quote_plus(source_lang)}&tl={quote_plus(target_lang)}&dt=t&q={quote_plus(content)}"
+    )
+    req = Request(
+        url,
+        headers={
+            "User-Agent": "Mozilla/5.0",
+            "Accept-Language": "en-US,en;q=0.9",
+        },
+    )
+    try:
+        with urlopen(req, timeout=8) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+    except Exception:
+        return None
+
+    parts = payload[0] if isinstance(payload, list) and payload else []
+    translated = []
+    for item in parts:
+        if isinstance(item, list) and item:
+            translated.append(str(item[0] or ""))
+    result = "".join(translated).strip()
+    return result or None
+
+
+def _fetch_google_tts_audio(text: str, lang: str = "ml") -> tuple[bytes | None, str]:
+    content = str(text or "").strip()
+    if not content:
+        return None, "empty"
+
+    url = (
+        "https://translate.google.com/translate_tts"
+        f"?ie=UTF-8&q={quote_plus(content)}&tl={quote_plus(lang)}&client=tw-ob"
+    )
+    req = Request(
+        url,
+        headers={
+            "User-Agent": "Mozilla/5.0",
+            "Referer": "https://translate.google.com/",
+            "Accept-Language": "en-US,en;q=0.9",
+        },
+    )
+    try:
+        with urlopen(req, timeout=10) as resp:
+            return resp.read(), "ok"
+    except Exception:
+        return None, "unavailable"
+
+
+def _decode_image_candidate(raw_value: str) -> str:
+    value = str(raw_value or "").strip().strip('"').strip("'")
+    if not value:
+        return ""
+    value = html.unescape(value)
+    value = value.replace("\\u003d", "=").replace("\\u0026", "&").replace("\\u002F", "/").replace("\\/", "/")
+    value = value.replace("&amp;", "&")
+    value = unquote(value)
+    return value
+
+
+def _is_safe_image_candidate(url: str) -> bool:
+    if not url:
+        return False
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"}:
+        return False
+    host = (parsed.hostname or "").lower()
+    if not host:
+        return False
+    if host in {"localhost", "127.0.0.1", "0.0.0.0", "::1"}:
+        return False
+    if host.endswith(".local") or host.endswith(".internal"):
+        return False
+    blocked_prefixes = ("10.", "127.", "169.254.", "172.16.", "172.17.", "172.18.", "172.19.", "172.2", "192.168.")
+    if host.startswith(blocked_prefixes):
+        return False
+    lower_path = (parsed.path or "").lower()
+    image_exts = (".jpg", ".jpeg", ".png", ".webp", ".avif", ".gif")
+    return any(lower_path.endswith(ext) for ext in image_exts) or "googleusercontent.com" in host or "gstatic.com" in host
+
+
+def _scrape_google_image(query: str) -> str | None:
+    search_url = f"https://www.google.com/search?tbm=isch&hl=en&q={quote_plus(query)}"
+    req = Request(
+        search_url,
+        headers={
+            "User-Agent": "Mozilla/5.0",
+            "Accept-Language": "en-US,en;q=0.9",
+        },
+    )
+    try:
+        with urlopen(req, timeout=8) as resp:
+            body = resp.read().decode("utf-8", errors="ignore")
+    except Exception:
+        return None
+
+    patterns = [
+        r'"ou":"(https?://[^"]+)"',
+        r'"(https?:\\\\/\\\\/[^"\\s]+\\.(?:jpe?g|png|webp|avif|gif)[^"\\s]*)"',
+        r'"(https?://[^"\\s]+\\.(?:jpe?g|png|webp|avif|gif)[^"\\s]*)"',
+    ]
+
+    for pattern in patterns:
+        for match in re.finditer(pattern, body, flags=re.IGNORECASE):
+            candidate = _decode_image_candidate(match.group(1))
+            if _is_safe_image_candidate(candidate):
+                return candidate
+    return None
+
+
+def _scrape_bing_image(query: str) -> str | None:
+    search_url = f"https://www.bing.com/images/search?q={quote_plus(query)}&form=HDRSC2&first=1"
+    req = Request(
+        search_url,
+        headers={
+            "User-Agent": "Mozilla/5.0",
+            "Accept-Language": "en-US,en;q=0.9",
+        },
+    )
+    try:
+        with urlopen(req, timeout=8) as resp:
+            body = resp.read().decode("utf-8", errors="ignore")
+    except Exception:
+        return None
+
+    patterns = [
+        r'"murl":"(https?://[^"]+)"',
+        r"murl&quot;:&quot;(https?://[^&]+)&quot;",
+        r'"(https?://[^"\\s]+\\.(?:jpe?g|png|webp|avif|gif)[^"\\s]*)"',
+    ]
+    for pattern in patterns:
+        for match in re.finditer(pattern, body, flags=re.IGNORECASE):
+            candidate = _decode_image_candidate(match.group(1))
+            if _is_safe_image_candidate(candidate):
+                return candidate
+    return None
 
 
 @api_view(["GET"])
@@ -551,25 +731,15 @@ def build_ingredient_status(pantry_items, parsed_ingredients):
 def image_proxy(request):
     url = request.query_params.get("url")
     fallback = request.query_params.get("fallback")
-    safe_fallback = None
-
-    if fallback and fallback.startswith("http"):
-        fb_parsed = urlparse(fallback)
-        allowed_fallback_domains = {"source.unsplash.com", "images.unsplash.com", "placehold.co"}
-        if fb_parsed.netloc in allowed_fallback_domains:
-            safe_fallback = fallback
+    safe_fallback = _resolve_safe_fallback(fallback)
 
     if not url or not url.startswith("http"):
-        if safe_fallback:
-            return HttpResponseRedirect(safe_fallback)
-        return Response({"error": "Invalid url"}, status=400)
+        return HttpResponseRedirect(safe_fallback)
 
     parsed = urlparse(url)
     domain = parsed.netloc.lower()
     if not (domain == "archanaskitchen.com" or domain.endswith(".archanaskitchen.com")):
-        if safe_fallback:
-            return HttpResponseRedirect(safe_fallback)
-        return Response({"error": "Domain not allowed"}, status=400)
+        return HttpResponseRedirect(safe_fallback)
 
     try:
         req = Request(
@@ -584,9 +754,28 @@ def image_proxy(request):
             content_type = resp.headers.get("Content-Type", "image/jpeg")
             return HttpResponse(content, content_type=content_type)
     except Exception:
-        if safe_fallback:
-            return HttpResponseRedirect(safe_fallback)
-        return Response({"error": "Failed to fetch image"}, status=502)
+        return HttpResponseRedirect(safe_fallback)
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def live_recipe_image(request):
+    query = str(request.query_params.get("q") or "").strip()
+    fallback = request.query_params.get("fallback")
+    safe_fallback = _resolve_safe_fallback(fallback)
+
+    if not query:
+        return HttpResponseRedirect(safe_fallback)
+
+    # Direct scraping mode requested: try Google first, then Bing as resilient fallback.
+    candidate = _scrape_google_image(f"{query} plated dish")
+    if not candidate:
+        candidate = _scrape_bing_image(f"{query} plated dish")
+
+    if not candidate:
+        return HttpResponseRedirect(safe_fallback)
+
+    return HttpResponseRedirect(candidate)
 
 
 @api_view(["GET"])
@@ -634,6 +823,59 @@ def auth_background(request):
     return FileResponse(open(file_path, "rb"), content_type="image/jpeg")
 
 
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def translate_recipe_steps(request):
+    steps = request.data.get("steps") or []
+    target_lang = str(request.data.get("target_lang") or "ml").strip().lower()
+    source_lang = str(request.data.get("source_lang") or "en").strip().lower()
+
+    if not isinstance(steps, list):
+        return Response({"error": "steps must be a list"}, status=status.HTTP_400_BAD_REQUEST)
+
+    clean_steps = [str(step or "").strip() for step in steps if str(step or "").strip()]
+    if not clean_steps:
+        return Response({"translated_steps": [], "target_lang": target_lang, "source_lang": source_lang})
+
+    translated_steps = []
+    success = True
+    for step in clean_steps:
+        translated = _translate_text_google(step, target_lang=target_lang, source_lang=source_lang)
+        if translated is None:
+            success = False
+            translated_steps.append(step)
+        else:
+            translated_steps.append(translated)
+
+    return Response(
+        {
+            "translated_steps": translated_steps,
+            "target_lang": target_lang,
+            "source_lang": source_lang,
+            "translated": success,
+        }
+    )
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def recipe_step_tts(request):
+    text = str(request.query_params.get("text") or "").strip()
+    lang = str(request.query_params.get("lang") or "ml").strip().lower()
+
+    if not text:
+        return Response({"error": "text is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+    if len(text) > 400:
+        text = text[:400]
+
+    audio_bytes, status_text = _fetch_google_tts_audio(text, lang=lang)
+    if not audio_bytes:
+        return Response({"error": f"tts_{status_text}"}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+    return HttpResponse(audio_bytes, content_type="audio/mpeg")
+
+
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def recipe_detail(request, recipe_id):
@@ -672,6 +914,10 @@ def recipe_detail(request, recipe_id):
     recipe["ingredient_status"] = status_list
     recipe["parsed_ingredients"] = scaled_ingredients
     recipe["nutrition"] = calculate_nutrition(scaled_ingredients)
+    nutrition_insights = build_recipe_nutrition_insights(recipe["nutrition"])
+    recipe["nutrition_insights"] = nutrition_insights
+    recipe["nutrition_badges"] = nutrition_insights.get("badges", [])
+    recipe["nutrition_score"] = nutrition_insights.get("score", 0)
     recipe["scale"] = scale
     recipe["substitution_suggestions"] = find_substitutable_ingredients(recipe["missing_ingredients"], pantry_names)
 
@@ -749,6 +995,9 @@ def cook_recipe(request):
 
             if not ing_name or needed <= 0:
                 continue
+            if _is_household_spice(ing_name):
+                # Household spices are considered available and are not deducted.
+                continue
 
             pantry_obj = locked_pantry.get(ing_name)
             have = float(pantry_obj.quantity) if pantry_obj else 0.0
@@ -797,6 +1046,7 @@ def cook_recipe(request):
         PantryItem.objects.filter(user=request.user, quantity__lte=0.0001).delete()
 
     nutrition_totals = calculate_nutrition(parsed_ingredients)
+    cook_nutrition_insights = build_recipe_nutrition_insights(nutrition_totals)
     nutrition_scoring = None
     try:
         from nutrition.services import record_cooked_recipe
@@ -821,6 +1071,7 @@ def cook_recipe(request):
             "deducted": deducted,
             "missing": insufficient,
             "nutrition": nutrition_totals,
+            "nutrition_insights": cook_nutrition_insights,
             "nutrition_scoring": nutrition_scoring,
         },
         status=status.HTTP_200_OK
