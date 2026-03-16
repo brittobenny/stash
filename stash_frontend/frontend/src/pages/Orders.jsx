@@ -42,7 +42,7 @@ const Orders = () => {
                 skipped: res.data?.skipped || [],
             });
             setUpdateError('');
-            localStorage.setItem('pantry_refresh', Date.now().toString());
+            sessionStorage.setItem('pantry_refresh', Date.now().toString());
             window.dispatchEvent(new Event('pantry_refresh'));
             fetchOrders();
         } catch (err) {

@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { Bell, CheckCircle2, ArrowLeft } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { accountService } from '../services/api';
+import { accountService, shopService } from '../services/api';
+import { downloadReceiptPdf } from '../utils/receiptPdf';
 import '../styles/global.css';
 
 const Notifications = () => {
@@ -44,6 +45,18 @@ const Notifications = () => {
         }
     };
 
+    const handleDownloadReceipt = async (orderId) => {
+        try {
+            const res = await shopService.getOrderDetail(orderId);
+            const ok = downloadReceiptPdf(res.data);
+            if (!ok) {
+                setError('Unable to open receipt. Please allow pop-ups.');
+            }
+        } catch (err) {
+            setError('Failed to load receipt data.');
+        }
+    };
+
     const unreadCount = notifications.filter((n) => !n.is_read).length;
 
     return (
@@ -81,11 +94,18 @@ const Notifications = () => {
                                 <div style={styles.itemMessage}>{n.message}</div>
                                 <div style={styles.itemMeta}>{new Date(n.created_at).toLocaleString()}</div>
                             </div>
-                            {!n.is_read && (
-                                <button style={styles.itemBtn} onClick={() => handleMarkRead(n.id)}>
-                                    <CheckCircle2 size={14} /> Mark read
-                                </button>
-                            )}
+                            <div style={styles.itemActions}>
+                                {n.data?.receipt && n.data?.order_id && (
+                                    <button style={styles.itemSecondaryBtn} onClick={() => handleDownloadReceipt(n.data.order_id)}>
+                                        Download receipt
+                                    </button>
+                                )}
+                                {!n.is_read && (
+                                    <button style={styles.itemBtn} onClick={() => handleMarkRead(n.id)}>
+                                        <CheckCircle2 size={14} /> Mark read
+                                    </button>
+                                )}
+                            </div>
                         </div>
                     ))}
                 </div>
@@ -112,7 +132,9 @@ const styles = {
     itemTitle: { fontWeight: 700, marginBottom: '0.2rem' },
     itemMessage: { color: 'var(--color-text-light)' },
     itemMeta: { fontSize: '0.75rem', color: 'var(--color-text-light)', marginTop: '0.3rem' },
+    itemActions: { display: 'flex', gap: '0.6rem', alignItems: 'center' },
     itemBtn: { background: 'var(--color-primary)', color: '#fff', border: 'none', padding: '6px 10px', borderRadius: '999px', cursor: 'pointer', fontSize: '0.85rem', display: 'inline-flex', alignItems: 'center', gap: '6px' },
+    itemSecondaryBtn: { background: 'transparent', border: '1px solid var(--color-border)', padding: '6px 10px', borderRadius: '999px', cursor: 'pointer', fontSize: '0.85rem' },
 };
 
 export default Notifications;

@@ -223,3 +223,43 @@ class AdminUserListView(APIView):
                 "is_superuser": user.is_superuser,
             })
         return Response(data, status=status.HTTP_200_OK)
+
+
+class AdminUserUpdateView(APIView):
+    permission_classes = [IsAdmin]
+
+    def patch(self, request, user_id):
+        profile = UserProfile.objects.select_related("user").filter(user_id=user_id).first()
+        if not profile:
+            return Response({"error": "User not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        user = profile.user
+        role = request.data.get("role")
+        is_active = request.data.get("is_active")
+
+        if role in {"customer", "shopowner", "admin"}:
+            profile.role = role
+            profile.save(update_fields=["role"])
+            if role == "admin":
+                user.is_staff = True
+            elif role == "shopowner":
+                user.is_staff = True
+            else:
+                user.is_staff = False
+            user.save(update_fields=["is_staff"])
+
+        if isinstance(is_active, bool):
+            user.is_active = is_active
+            user.save(update_fields=["is_active"])
+
+        return Response({
+            "id": user.id,
+            "email": user.email,
+            "name": user.first_name,
+            "role": profile.role,
+            "mobile_number": profile.mobile_number,
+            "location": profile.location,
+            "is_active": user.is_active,
+            "is_staff": user.is_staff,
+            "is_superuser": user.is_superuser,
+        }, status=status.HTTP_200_OK)

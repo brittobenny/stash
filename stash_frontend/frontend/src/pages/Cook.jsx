@@ -27,7 +27,7 @@ const LOADING_PHASES = [
 
 const getUserCacheKey = () => {
     try {
-        const rawUser = localStorage.getItem('user');
+        const rawUser = sessionStorage.getItem('user');
         if (rawUser) {
             const parsed = JSON.parse(rawUser);
             if (parsed?.id) return `u:${parsed.id}`;
@@ -36,7 +36,7 @@ const getUserCacheKey = () => {
     } catch (err) {
         // ignore malformed local user cache
     }
-    const token = localStorage.getItem('token') || '';
+    const token = sessionStorage.getItem('token') || '';
     return token ? `t:${token.slice(-16)}` : 'anon';
 };
 
@@ -460,14 +460,6 @@ const Cook = () => {
 
                                             <div style={styles.actionRow}>
                                                 <button
-                                                    style={styles.secondaryBtn}
-                                                    onClick={() => handleDownloadRecipe(recipe.id)}
-                                                    disabled={downloadingRecipeId === recipe.id}
-                                                >
-                                                    <Download size={16} />
-                                                    {downloadingRecipeId === recipe.id ? 'Preparing PDF...' : 'Download PDF'}
-                                                </button>
-                                                <button
                                                     style={styles.detailBtn}
                                                     onClick={() => navigate(`/customer/recipes/${recipe.id}`, { state: { from: '/customer/cook' } })}
                                                 >
@@ -649,7 +641,7 @@ const styles = {
     },
     resultsSection: { minHeight: '280px' },
     aiLoadingStage: {
-        minHeight: '360px',
+        minHeight: '70vh',
         display: 'flex',
         flexDirection: 'column',
         gap: '0.95rem',
@@ -683,6 +675,7 @@ const styles = {
         flexDirection: 'column',
         gap: '0.95rem',
         height: '100%',
+        justifyContent: 'space-between',
     },
     aiHeaderRow: {
         display: 'flex',
@@ -899,20 +892,6 @@ const styles = {
         marginTop: '0.8rem',
         display: 'flex',
         gap: '0.55rem',
-    },
-    secondaryBtn: {
-        flex: 1,
-        borderRadius: '10px',
-        border: '1px solid var(--color-border)',
-        background: 'var(--color-surface-2)',
-        color: 'var(--color-text)',
-        padding: '10px 12px',
-        fontWeight: 700,
-        display: 'inline-flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: '6px',
-        cursor: 'pointer',
     },
 };
 

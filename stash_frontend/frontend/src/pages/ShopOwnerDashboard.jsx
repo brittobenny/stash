@@ -20,6 +20,7 @@ const ShopOwnerDashboard = () => {
     const [analytics, setAnalytics] = useState(null);
     const [loading, setLoading] = useState(false);
     const [exporting, setExporting] = useState(false);
+    const [chartMode, setChartMode] = useState('day');
     const [filters, setFilters] = useState({
         date_from: defaultFrom,
         date_to: defaultTo,
@@ -43,7 +44,10 @@ const ShopOwnerDashboard = () => {
 
     const summary = analytics?.summary || {};
     const salesByDay = analytics?.sales_by_day || [];
-    const chartRows = salesByDay.slice(-10);
+    const salesByWeek = analytics?.sales_by_week || [];
+    const salesByMonth = analytics?.sales_by_month || [];
+    const chartSource = chartMode === 'week' ? salesByWeek : chartMode === 'month' ? salesByMonth : salesByDay;
+    const chartRows = chartSource.slice(-10);
     const topProducts = analytics?.top_products || [];
     const lowStockAlerts = analytics?.low_stock_alerts || [];
 
@@ -170,12 +174,31 @@ const ShopOwnerDashboard = () => {
                     <div style={styles.chartCard}>
                         <div style={styles.chartHeader}>
                             <h3>Revenue trend</h3>
-                            <span style={styles.chartNote}>Latest {chartRows.length || 0} days</span>
+                            <div style={styles.chartToggle}>
+                                <button
+                                    style={chartMode === 'day' ? styles.toggleActive : styles.toggleBtn}
+                                    onClick={() => setChartMode('day')}
+                                >
+                                    Day
+                                </button>
+                                <button
+                                    style={chartMode === 'week' ? styles.toggleActive : styles.toggleBtn}
+                                    onClick={() => setChartMode('week')}
+                                >
+                                    Week
+                                </button>
+                                <button
+                                    style={chartMode === 'month' ? styles.toggleActive : styles.toggleBtn}
+                                    onClick={() => setChartMode('month')}
+                                >
+                                    Month
+                                </button>
+                            </div>
                         </div>
                         <div style={styles.chartBars}>
                             {chartRows.length === 0 && <div style={styles.emptyText}>No sales in this period.</div>}
                             {chartRows.map((item) => (
-                                <div key={item.date} style={styles.chartBarWrap}>
+                                <div key={item.date || item.week || item.month} style={styles.chartBarWrap}>
                                     <div
                                         style={{
                                             ...styles.chartBar,
@@ -183,7 +206,11 @@ const ShopOwnerDashboard = () => {
                                         }}
                                         title={`$${Number(item.revenue || 0).toFixed(2)}`}
                                     ></div>
-                                    <span>{item.date.slice(5)}</span>
+                                    <span>
+                                        {chartMode === 'day' && item.date?.slice(5)}
+                                        {chartMode === 'week' && item.week?.slice(5)}
+                                        {chartMode === 'month' && item.month?.slice(5)}
+                                    </span>
                                 </div>
                             ))}
                         </div>
@@ -296,6 +323,9 @@ const styles = {
     reportMetric: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '1rem', color: 'var(--color-text-light)' },
     chartCard: { background: '#fff', padding: '1.5rem', borderRadius: '20px', border: '1px solid var(--color-border)', boxShadow: 'var(--shadow-sm)' },
     chartHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '1rem' },
+    chartToggle: { display: 'inline-flex', gap: '0.4rem', background: 'var(--color-surface-2)', borderRadius: '999px', padding: '4px', border: '1px solid var(--color-border)' },
+    toggleBtn: { border: 'none', background: 'transparent', padding: '6px 10px', borderRadius: '999px', cursor: 'pointer', color: 'var(--color-text-light)', fontWeight: 600 },
+    toggleActive: { border: 'none', background: 'rgba(225,29,46,0.12)', padding: '6px 10px', borderRadius: '999px', cursor: 'pointer', color: 'var(--color-primary)', fontWeight: 700 },
     chartNote: { color: 'var(--color-text-light)', fontSize: '0.85rem' },
     chartBars: { display: 'flex', gap: '0.55rem', alignItems: 'flex-end', height: '170px' },
     chartBarWrap: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.35rem', flex: 1, fontSize: '0.75rem', color: 'var(--color-text-light)' },

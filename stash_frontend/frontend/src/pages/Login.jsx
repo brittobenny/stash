@@ -10,9 +10,7 @@ const AUTO_LOGIN_DEBOUNCE_MS = 900;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const redirectByRole = (navigate, role) => {
-    if (role === 'shopowner') navigate('/shop-owner/dashboard');
-    else if (role === 'admin') navigate('/admin');
-    else navigate('/customer/home');
+    navigate(`/loading?role=${role || 'customer'}`, { replace: true });
 };
 
 const Login = () => {
@@ -30,14 +28,14 @@ const Login = () => {
         try {
             const data = await authService.login(username, password);
             const role = data.role || data.user?.role || 'customer';
-            localStorage.setItem('role', role);
+            sessionStorage.setItem('role', role);
             if (data.user) {
                 const safeUser = {
                     ...data.user,
                     name: normalizeName(data.user.name),
                     image: normalizeImagePath(data.user.image),
                 };
-                localStorage.setItem('user', JSON.stringify(safeUser));
+                sessionStorage.setItem('user', JSON.stringify(safeUser));
             }
 
             redirectByRole(navigate, role);
@@ -63,8 +61,8 @@ const Login = () => {
     };
 
     useEffect(() => {
-        const token = localStorage.getItem('token');
-        const role = localStorage.getItem('role');
+        const token = sessionStorage.getItem('token');
+        const role = sessionStorage.getItem('role');
         if (token) {
             redirectByRole(navigate, role || 'customer');
         }

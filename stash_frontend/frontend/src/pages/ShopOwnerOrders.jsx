@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { ShoppingBag, Truck, CheckCircle, PackageCheck } from 'lucide-react';
+import { ShoppingBag, Truck, CheckCircle, PackageCheck, Eye, Box } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { shopOwnerService } from '../services/api';
 import '../styles/global.css';
 
@@ -47,10 +48,12 @@ const ShopOwnerOrders = () => {
                         <option value="">All Status</option>
                         <option value="PLACED">Placed</option>
                         <option value="CONFIRMED">Confirmed</option>
+                        <option value="PACKED">Packed</option>
                         <option value="OUT_FOR_DELIVERY">Out for delivery</option>
                         <option value="DELIVERED">Delivered</option>
                         <option value="COMPLETED">Completed</option>
                         <option value="CANCELLED">Cancelled</option>
+                        <option value="REFUNDED">Refunded</option>
                     </select>
                 </div>
             </section>
@@ -72,12 +75,20 @@ const ShopOwnerOrders = () => {
                                 <div><Truck size={16} /> {order.created_at?.slice(0, 10) || '--'}</div>
                             </div>
                             <div style={styles.orderActions}>
+                                <Link to={`/shop-owner/orders/${order.id}`} style={styles.viewBtn}>
+                                    <Eye size={16} /> View
+                                </Link>
                                 {order.status === 'PLACED' && (
                                     <button style={styles.orderBtn} onClick={() => updateStatus(order.id, 'CONFIRMED')}>
                                         <PackageCheck size={16} /> Confirm
                                     </button>
                                 )}
                                 {order.status === 'CONFIRMED' && (
+                                    <button style={styles.orderBtn} onClick={() => updateStatus(order.id, 'PACKED')}>
+                                        <Box size={16} /> Pack
+                                    </button>
+                                )}
+                                {order.status === 'PACKED' && (
                                     <button style={styles.orderBtn} onClick={() => updateStatus(order.id, 'OUT_FOR_DELIVERY')}>
                                         <Truck size={16} /> Dispatch
                                     </button>
@@ -119,6 +130,7 @@ const styles = {
     orderMeta: { display: 'flex', justifyContent: 'space-between', color: 'var(--color-text-light)', fontSize: '0.85rem' },
     orderActions: { display: 'flex', gap: '0.6rem', flexWrap: 'wrap' },
     orderBtn: { background: 'var(--color-primary)', color: '#fff', border: 'none', padding: '10px 14px', borderRadius: '12px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px' },
+    viewBtn: { background: 'transparent', border: '1px solid var(--color-border)', padding: '10px 14px', borderRadius: '12px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px', textDecoration: 'none', color: 'var(--color-text)' },
     empty: { gridColumn: '1/-1', textAlign: 'center', color: 'var(--color-text-light)' },
 };
 

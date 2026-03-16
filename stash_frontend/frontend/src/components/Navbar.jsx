@@ -19,10 +19,10 @@ const Navbar = () => {
 
     useEffect(() => {
         // Simple check on mount and location change
-        const r = localStorage.getItem('role');
+        const r = sessionStorage.getItem('role');
         setRole(r);
         try {
-            const rawUser = localStorage.getItem('user');
+            const rawUser = sessionStorage.getItem('user');
             if (rawUser) {
                 const parsed = JSON.parse(rawUser);
                 const img = normalizeImagePath(parsed?.image);
@@ -54,9 +54,9 @@ const Navbar = () => {
     }, [location]);
 
     const handleLogout = () => {
-        localStorage.removeItem('token');
-        localStorage.removeItem('role');
-        localStorage.removeItem('user');
+        sessionStorage.removeItem('token');
+        sessionStorage.removeItem('role');
+        sessionStorage.removeItem('user');
         navigate('/login');
     };
 
@@ -81,9 +81,11 @@ const Navbar = () => {
                     {role === 'shopowner' && (
                         <>
                             <li><Link to="/shop-owner/dashboard" style={{ ...styles.link, ...(isActive('/shop-owner/dashboard') ? styles.linkActive : {}) }}>Dashboard</Link></li>
+                            <li><Link to="/shop-owner/inventory" style={{ ...styles.link, ...(isActive('/shop-owner/inventory') ? styles.linkActive : {}) }}>Inventory</Link></li>
                             <li><Link to="/shop-owner/products" style={{ ...styles.link, ...(isActive('/shop-owner/products') ? styles.linkActive : {}) }}>Products</Link></li>
                             <li><Link to="/shop-owner/orders" style={{ ...styles.link, ...(isActive('/shop-owner/orders') ? styles.linkActive : {}) }}>Orders</Link></li>
                             <li><Link to="/shop-owner/feedback" style={{ ...styles.link, ...(isActive('/shop-owner/feedback') ? styles.linkActive : {}) }}>Feedback</Link></li>
+                            <li><Link to="/shop-owner/settings" style={{ ...styles.link, ...(isActive('/shop-owner/settings') ? styles.linkActive : {}) }}>Settings</Link></li>
                         </>
                     )}
                     {role === 'admin' && (
@@ -92,6 +94,8 @@ const Navbar = () => {
                             <li><Link to="/admin/users" style={{ ...styles.link, ...(isActive('/admin/users') ? styles.linkActive : {}) }}>Users</Link></li>
                             <li><Link to="/admin/shops" style={{ ...styles.link, ...(isActive('/admin/shops') ? styles.linkActive : {}) }}>Shops</Link></li>
                             <li><Link to="/admin/posts" style={{ ...styles.link, ...(isActive('/admin/posts') ? styles.linkActive : {}) }}>Posts</Link></li>
+                            <li><Link to="/admin/orders" style={{ ...styles.link, ...(isActive('/admin/orders') ? styles.linkActive : {}) }}>Orders</Link></li>
+                            <li><Link to="/admin/feedback" style={{ ...styles.link, ...(isActive('/admin/feedback') ? styles.linkActive : {}) }}>Feedback</Link></li>
                         </>
                     )}
                 </ul>

@@ -11,8 +11,7 @@ const defaultForm = {
     low_stock_threshold: 10,
     unit: 'pcs',
     ingredient_id: '',
-    pack_size: '',
-    pack_unit: 'pcs',
+    pack_size: 1,
     is_active: true,
 };
 
@@ -21,20 +20,41 @@ const ShopOwnerProducts = () => {
     const [categories, setCategories] = useState([]);
     const [ingredients, setIngredients] = useState([]);
     const [form, setForm] = useState(defaultForm);
+    const [productImage, setProductImage] = useState(null);
+    const [currentImage, setCurrentImage] = useState('');
     const [editingId, setEditingId] = useState(null);
     const [newCategoryName, setNewCategoryName] = useState('');
     const [newCategoryImage, setNewCategoryImage] = useState(null);
     const [loading, setLoading] = useState(false);
+    const [showHidden, setShowHidden] = useState(false);
 
     useEffect(() => {
         loadAll();
     }, []);
 
+    useEffect(() => {
+        if (!form.name || form.ingredient_id) return;
+        const normalized = form.name.trim().toLowerCase();
+        if (!normalized) return;
+        const exact = ingredients.find((ing) => String(ing.name || '').trim().toLowerCase() === normalized);
+        if (exact) {
+            setForm((prev) => ({ ...prev, ingredient_id: exact.id }));
+            return;
+        }
+        const partial = ingredients.filter((ing) => {
+            const name = String(ing.name || '').trim().toLowerCase();
+            return name && (normalized.includes(name) || name.includes(normalized));
+        });
+        if (partial.length === 1) {
+            setForm((prev) => ({ ...prev, ingredient_id: partial[0].id }));
+        }
+    }, [form.name, form.ingredient_id, ingredients]);
+
     const loadAll = async () => {
         setLoading(true);
         try {
             const [prodRes, catRes, ingRes] = await Promise.all([
-                shopOwnerService.getMyProducts(),
+                shopOwnerService.getMyProducts(showHidden ? { include_hidden: true } : {}),
                 shopOwnerService.listCategories(),
                 pantryService.listIngredients(),
             ]);
@@ -60,13 +80,29 @@ const ShopOwnerProducts = () => {
     const handleSubmit = async (e) => {
         e.preventDefault();
         try {
+            const formData = new FormData();
+            const payload = {
+                ...form,
+                pack_size: form.pack_size || 1,
+                pack_unit: form.unit,
+            };
+            Object.entries(payload).forEach(([key, value]) => {
+                if (value !== undefined && value !== null && value !== '') {
+                    formData.append(key, value);
+                }
+            });
+            if (productImage) {
+                formData.append('image', productImage);
+            }
             if (editingId) {
-                await shopOwnerService.updateProduct(editingId, form);
+                await shopOwnerService.updateProduct(editingId, formData);
             } else {
-                await shopOwnerService.addProduct(form);
+                await shopOwnerService.addProduct(formData);
             }
             setForm(defaultForm);
             setEditingId(null);
+            setProductImage(null);
+            setCurrentImage('');
             await loadAll();
         } catch (err) {
             alert('Failed to save product.');
@@ -83,17 +119,34 @@ const ShopOwnerProducts = () => {
             low_stock_threshold: product.low_stock_threshold ?? 10,
             unit: product.unit || 'pcs',
             ingredient_id: product.ingredient_id || '',
-            pack_size: product.pack_size || '',
-            pack_unit: product.pack_unit || 'pcs',
+            pack_size: product.pack_size ?? 1,
             is_active: product.is_active ?? true,
         });
+        setProductImage(null);
+        setCurrentImage(product.image || '');
         window.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
     const handleDelete = async (id) => {
         if (!confirm('Delete this product?')) return;
-        await shopOwnerService.deleteProduct(id);
-        loadAll();
+        try {
+            const res = await shopOwnerService.deleteProduct(id);
+            if (res?.data?.status === 'deactivated') {
+                alert('Product is linked to past orders. It was hidden from the shop instead of deleted.');
+            }
+            loadAll();
+        } catch (err) {
+            alert('Failed to delete product.');
+        }
+    };
+
+    const handleVisibility = async (product, makeActive) => {
+        try {
+            await shopOwnerService.setProductActive(product.id, makeActive);
+            loadAll();
+        } catch (err) {
+            alert('Failed to update visibility.');
+        }
     };
 
     return (
@@ -103,9 +156,14 @@ const ShopOwnerProducts = () => {
                     <h1 style={styles.title}>Products</h1>
                     <p style={styles.subtitle}>Manage your inventory, pricing, and pantry mapping.</p>
                 </div>
-                <button style={styles.ghostBtn} onClick={loadAll} disabled={loading}>
-                    {loading ? 'Refreshing...' : 'Refresh'}
-                </button>
+                <div style={styles.headerActions}>
+                    <button style={styles.ghostBtn} onClick={() => setShowHidden((prev) => !prev)}>
+                        {showHidden ? 'Hide inactive' : 'Show hidden'}
+                    </button>
+                    <button style={styles.ghostBtn} onClick={loadAll} disabled={loading}>
+                        {loading ? 'Refreshing...' : 'Refresh'}
+                    </button>
+                </div>
             </section>
 
             <section style={styles.formCard}>
@@ -200,28 +258,16 @@ const ShopOwnerProducts = () => {
                             </select>
                         </div>
                         <div style={styles.formGroup}>
-                            <label>Pack Size</label>
+                            <label>Pack Size (in selected unit)</label>
                             <input
                                 type="number"
                                 step="0.1"
+                                min="0.1"
                                 style={styles.input}
                                 value={form.pack_size}
                                 onChange={(e) => setForm({ ...form, pack_size: e.target.value })}
+                                required
                             />
-                        </div>
-                        <div style={styles.formGroup}>
-                            <label>Pack Unit</label>
-                            <select
-                                style={styles.input}
-                                value={form.pack_unit}
-                                onChange={(e) => setForm({ ...form, pack_unit: e.target.value })}
-                            >
-                                <option value="g">g</option>
-                                <option value="kg">kg</option>
-                                <option value="ml">ml</option>
-                                <option value="l">l</option>
-                                <option value="pcs">pcs</option>
-                            </select>
                         </div>
                         <div style={styles.formGroup}>
                             <label>Active Listing</label>
@@ -233,6 +279,21 @@ const ShopOwnerProducts = () => {
                                 />
                                 <span>{form.is_active ? 'Visible in shop' : 'Hidden'}</span>
                             </label>
+                        </div>
+                        <div style={styles.formGroup}>
+                            <label>Product Image</label>
+                            <label style={styles.fileLabelWide}>
+                                <input
+                                    type="file"
+                                    accept="image/*"
+                                    style={styles.fileInput}
+                                    onChange={(e) => setProductImage(e.target.files?.[0] || null)}
+                                />
+                                {productImage ? productImage.name : 'Upload product image'}
+                            </label>
+                            {currentImage && !productImage && (
+                                <span style={styles.imageHint}>Current image attached</span>
+                            )}
                         </div>
                     </div>
 
@@ -265,7 +326,7 @@ const ShopOwnerProducts = () => {
                             <button
                                 type="button"
                                 style={styles.secondaryBtn}
-                                onClick={() => { setForm(defaultForm); setEditingId(null); }}
+                                onClick={() => { setForm(defaultForm); setEditingId(null); setProductImage(null); setCurrentImage(''); }}
                             >
                                 Cancel
                             </button>
@@ -286,6 +347,7 @@ const ShopOwnerProducts = () => {
                                 <th style={styles.th}>Price</th>
                                 <th style={styles.th}>Pack</th>
                                 <th style={styles.th}>Alert</th>
+                                <th style={styles.th}>Status</th>
                                 <th style={styles.th}>Actions</th>
                             </tr>
                         </thead>
@@ -306,7 +368,17 @@ const ShopOwnerProducts = () => {
                                             : `OK (${p.low_stock_threshold})`}
                                     </td>
                                     <td style={styles.td}>
+                                        <span style={p.is_active ? styles.statusActive : styles.statusHidden}>
+                                            {p.is_active ? 'Visible' : 'Hidden'}
+                                        </span>
+                                    </td>
+                                    <td style={styles.td}>
                                         <button style={styles.iconBtn} onClick={() => handleEdit(p)}><Edit size={16} /></button>
+                                        {p.is_active ? (
+                                            <button style={styles.iconBtn} onClick={() => handleVisibility(p, false)}>Hide</button>
+                                        ) : (
+                                            <button style={styles.iconBtn} onClick={() => handleVisibility(p, true)}>Show</button>
+                                        )}
                                         <button style={{ ...styles.iconBtn, color: '#ef4444' }} onClick={() => handleDelete(p.id)}><Trash2 size={16} /></button>
                                     </td>
                                 </tr>
@@ -326,6 +398,7 @@ const styles = {
         minHeight: '100vh',
     },
     header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem', flexWrap: 'wrap', gap: '1rem' },
+    headerActions: { display: 'flex', gap: '0.6rem', flexWrap: 'wrap' },
     title: { fontSize: '2.2rem', color: 'var(--color-text)' },
     subtitle: { color: 'var(--color-text-light)' },
     ghostBtn: { background: 'transparent', border: '1px solid var(--color-border)', padding: '10px 16px', borderRadius: '999px', cursor: 'pointer' },
@@ -354,7 +427,22 @@ const styles = {
         cursor: 'pointer',
         fontSize: '0.9rem',
     },
+    fileLabelWide: {
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: '0.5rem',
+        padding: '10px 16px',
+        borderRadius: '12px',
+        border: '1px dashed var(--color-border)',
+        background: '#fff',
+        color: 'var(--color-text-light)',
+        cursor: 'pointer',
+        fontSize: '0.9rem',
+        minHeight: '42px',
+    },
     fileInput: { display: 'none' },
+    imageHint: { fontSize: '0.8rem', color: 'var(--color-text-light)' },
 
     sectionTitle: { fontSize: '1.4rem', marginBottom: '1rem' },
     tableWrap: { background: 'var(--color-surface)', borderRadius: '16px', border: '1px solid var(--color-border)', overflowX: 'auto' },
@@ -363,6 +451,8 @@ const styles = {
     td: { padding: '1rem', borderBottom: '1px solid var(--color-border)' },
     tdSub: { color: 'var(--color-text-light)', fontSize: '0.85rem' },
     iconBtn: { background: 'transparent', border: 'none', cursor: 'pointer', marginRight: '0.4rem' },
+    statusActive: { background: 'rgba(34,197,94,0.12)', color: '#15803d', padding: '4px 10px', borderRadius: '999px', fontSize: '0.75rem', fontWeight: 700 },
+    statusHidden: { background: 'rgba(239,68,68,0.12)', color: '#dc2626', padding: '4px 10px', borderRadius: '999px', fontSize: '0.75rem', fontWeight: 700 },
 };
 
 export default ShopOwnerProducts;

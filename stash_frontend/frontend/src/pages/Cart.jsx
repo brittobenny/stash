@@ -61,7 +61,7 @@ const Cart = () => {
             const res = await shopService.checkout();
             const order = res.data;
             if (order?.id) {
-                localStorage.setItem('last_order', JSON.stringify(order));
+                sessionStorage.setItem('last_order', JSON.stringify(order));
                 navigate(`/customer/payment/${order.id}`);
             } else {
                 navigate('/customer/orders');

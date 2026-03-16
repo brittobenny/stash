@@ -77,7 +77,7 @@ const Profile = () => {
                     location: data.location || '',
                     mobile_number: data.mobile_number || '',
                 });
-                localStorage.setItem(
+                sessionStorage.setItem(
                     'user',
                     JSON.stringify({
                         name: safeName,
@@ -91,7 +91,7 @@ const Profile = () => {
                     })
                 );
             } catch (err) {
-                const storedUser = localStorage.getItem('user');
+                const storedUser = sessionStorage.getItem('user');
                 if (storedUser) {
                     const parsed = JSON.parse(storedUser);
                     const safeName = normalizeName(parsed.name);
@@ -108,7 +108,7 @@ const Profile = () => {
                         name: 'Guest User',
                         email: 'user@example.com',
                         mobile_number: 'N/A',
-                        role: localStorage.getItem('role') || 'Customer',
+                        role: sessionStorage.getItem('role') || 'Customer',
                     });
                     setProfileForm({ name: '', address: '', location: '', mobile_number: '' });
                 }
@@ -215,7 +215,7 @@ const Profile = () => {
                     image: safeImage || prev?.image,
                 }));
                 setProfileComplete(Boolean(data.profile_completed));
-                localStorage.setItem(
+                sessionStorage.setItem(
                     'user',
                     JSON.stringify({
                         name: safeName || profileForm.name || user?.name,

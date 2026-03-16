@@ -7,6 +7,7 @@ from .views import (
     NotificationMarkReadView,
     AdminSummaryView,
     AdminUserListView,
+    AdminUserUpdateView,
 )
 
 urlpatterns = [
@@ -17,4 +18,5 @@ urlpatterns = [
     path('notifications/<str:notification_id>/', NotificationMarkReadView.as_view(), name='notification_mark_read'),
     path('admin/summary/', AdminSummaryView.as_view(), name='admin_summary'),
     path('admin/users/', AdminUserListView.as_view(), name='admin_users'),
+    path('admin/users/<int:user_id>/', AdminUserUpdateView.as_view(), name='admin_user_update'),
 ]

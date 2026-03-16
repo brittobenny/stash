@@ -7,7 +7,7 @@ const Layout = () => {
     const [loading, setLoading] = useState(false);
 
     useEffect(() => {
-        const role = localStorage.getItem('role');
+        const role = sessionStorage.getItem('role');
         if (role) {
             setLoading(true);
             const timer = setTimeout(() => setLoading(false), 900);

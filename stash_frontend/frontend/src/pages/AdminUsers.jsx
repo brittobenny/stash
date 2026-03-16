@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Users } from 'lucide-react';
+import { Users, ShieldCheck, UserX } from 'lucide-react';
 import { adminService } from '../services/api';
 import '../styles/global.css';
 import '../styles/admin.css';
@@ -7,6 +7,7 @@ import '../styles/admin.css';
 const AdminUsers = () => {
   const [users, setUsers] = useState([]);
   const [error, setError] = useState('');
+  const [saving, setSaving] = useState(null);
 
   useEffect(() => {
     const load = async () => {
@@ -20,6 +21,18 @@ const AdminUsers = () => {
     };
     load();
   }, []);
+
+  const handleUpdate = async (userId, payload) => {
+    setSaving(userId);
+    try {
+      const res = await adminService.updateUser(userId, payload);
+      setUsers((prev) => prev.map((u) => (u.id === userId ? res.data : u)));
+    } catch (err) {
+      setError('Failed to update user.');
+    } finally {
+      setSaving(null);
+    }
+  };
 
   return (
     <div className="admin-page">
@@ -41,6 +54,7 @@ const AdminUsers = () => {
               <th>Role</th>
               <th>Location</th>
               <th>Status</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -48,14 +62,39 @@ const AdminUsers = () => {
               <tr key={u.id}>
                 <td>{u.name || '--'}</td>
                 <td>{u.email}</td>
-                <td>{u.role}</td>
+                <td>
+                  <select
+                    className="admin-select"
+                    value={u.role}
+                    onChange={(e) => handleUpdate(u.id, { role: e.target.value })}
+                    disabled={saving === u.id}
+                  >
+                    <option value="customer">customer</option>
+                    <option value="shopowner">shopowner</option>
+                    <option value="admin">admin</option>
+                  </select>
+                </td>
                 <td>{u.location || '--'}</td>
-                <td>{u.is_active ? 'Active' : 'Inactive'}</td>
+                <td>
+                  <span className={u.is_active ? 'admin-status admin-status-ok' : 'admin-status admin-status-bad'}>
+                    {u.is_active ? 'Active' : 'Inactive'}
+                  </span>
+                </td>
+                <td>
+                  <button
+                    className="admin-action"
+                    onClick={() => handleUpdate(u.id, { is_active: !u.is_active })}
+                    disabled={saving === u.id}
+                  >
+                    {u.is_active ? <UserX size={14} /> : <ShieldCheck size={14} />}
+                    {u.is_active ? 'Deactivate' : 'Activate'}
+                  </button>
+                </td>
               </tr>
             ))}
             {users.length === 0 && (
               <tr>
-                <td colSpan={5}>No users found.</td>
+                <td colSpan={6}>No users found.</td>
               </tr>
             )}
           </tbody>

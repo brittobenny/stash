@@ -103,7 +103,11 @@ const Shop = () => {
         if (raw.startsWith('http://') || raw.startsWith('https://')) {
             return raw;
         }
-        return raw.startsWith('/') ? raw : `/${raw}`;
+        let path = raw;
+        if (!path.startsWith('/media/')) {
+            path = `/media/${path.replace(/^\//, '')}`;
+        }
+        return `http://127.0.0.1:8000${path}`;
     };
 
     return (
@@ -160,8 +164,6 @@ const Shop = () => {
                                                 src={img}
                                                 alt={product.name}
                                                 style={styles.cardImg}
-                                                crossOrigin="anonymous"
-                                                referrerPolicy="no-referrer"
                                                 onError={(e) => {
                                                     e.currentTarget.src = `https://placehold.co/600x400?text=${encodeURIComponent(product.name)}`;
                                                 }}

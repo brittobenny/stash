@@ -29,13 +29,14 @@ const SocialHome = () => {
     const [commentsMap, setCommentsMap] = useState({});
     const [commentDrafts, setCommentDrafts] = useState({});
     const [searchQuery, setSearchQuery] = useState('');
+    const [topIndex, setTopIndex] = useState(0);
 
     const [displayName, setDisplayName] = useState('Stash chef');
     const [profileImage, setProfileImage] = useState(null);
 
     useEffect(() => {
         try {
-            const raw = localStorage.getItem('user');
+            const raw = sessionStorage.getItem('user');
             if (!raw) return;
             const parsed = JSON.parse(raw);
             const safeName = normalizeName(parsed.name);
@@ -101,6 +102,21 @@ const SocialHome = () => {
             myPosts: mine.length,
         };
     }, [feed, mine]);
+
+    const topPosts = useMemo(() => {
+        return [...(feed || [])]
+            .filter((p) => (p.like_count || 0) > 0)
+            .sort((a, b) => (b.like_count || 0) - (a.like_count || 0))
+            .slice(0, 4);
+    }, [feed]);
+
+    useEffect(() => {
+        if (!topPosts.length) return;
+        const timer = setInterval(() => {
+            setTopIndex((prev) => (prev + 1) % topPosts.length);
+        }, 3500);
+        return () => clearInterval(timer);
+    }, [topPosts.length]);
 
     const handleLike = async (post) => {
         if (post.status && post.status !== 'APPROVED') {
@@ -322,27 +338,40 @@ const SocialHome = () => {
                 </main>
 
                 <aside className="social-right">
-                    <div className="card insight-card">
-                        <h3>Community Highlights</h3>
-                        <div className="insight-row">
-                            <span>New recipes today</span>
-                            <strong>{stats.communityPosts}</strong>
+                    <div className="card highlight-card">
+                        <div className="highlight-header">
+                            <h3>Top Liked Recipes</h3>
+                            <span className="highlight-count">Top {topPosts.length || 0}</span>
                         </div>
-                        <div className="insight-row">
-                            <span>Active creators</span>
-                            <strong>{stats.communityAuthors}</strong>
-                        </div>
-                        <div className="insight-row">
-                            <span>Average likes</span>
-                            <strong>
-                                {stats.communityPosts ? Math.round(stats.communityLikes / Math.max(stats.communityPosts, 1)) : 0}
-                            </strong>
-                        </div>
-                        <div className="highlight-tags">
-                            <span>Pantry friendly</span>
-                            <span>15-min meals</span>
-                            <span>Batch cooking</span>
-                        </div>
+                        {topPosts.length === 0 ? (
+                            <p className="highlight-empty">No likes yet. Be the first to react!</p>
+                        ) : (
+                            <div className="highlight-slider">
+                                {topPosts.map((post, idx) => (
+                                    <div
+                                        key={post.id}
+                                        className={`highlight-item ${idx === topIndex ? 'active' : ''}`}
+                                    >
+                                        <div className="highlight-image">
+                                            <img
+                                                src={
+                                                    post.image ||
+                                                    'https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=1200&q=80'
+                                                }
+                                                alt={post.title}
+                                            />
+                                        </div>
+                                        <div className="highlight-body">
+                                            <div className="highlight-title">{post.title}</div>
+                                            <div className="highlight-meta">
+                                                <span>{post.author_name || 'Stash chef'}</span>
+                                                <strong>{post.like_count || 0} likes</strong>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                     </div>
                     <div className="card insight-card soft">
                         <h3>Top creators</h3>

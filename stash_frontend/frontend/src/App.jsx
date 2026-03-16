@@ -6,10 +6,15 @@ import ShopOwnerDashboard from './pages/ShopOwnerDashboard';
 import ShopOwnerProducts from './pages/ShopOwnerProducts';
 import ShopOwnerOrders from './pages/ShopOwnerOrders';
 import ShopOwnerFeedback from './pages/ShopOwnerFeedback';
+import ShopOwnerInventory from './pages/ShopOwnerInventory';
+import ShopOwnerOrderDetail from './pages/ShopOwnerOrderDetail';
+import ShopOwnerSettings from './pages/ShopOwnerSettings';
 import AdminDashboard from './pages/AdminDashboard';
 import AdminUsers from './pages/AdminUsers';
 import AdminShops from './pages/AdminShops';
 import AdminPosts from './pages/AdminPosts';
+import AdminOrders from './pages/AdminOrders';
+import AdminFeedback from './pages/AdminFeedback';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import Pantry from './pages/Pantry';
@@ -24,6 +29,7 @@ import Cook from './pages/Cook';
 import Notifications from './pages/Notifications';
 import SocialHome from './pages/SocialHome';
 import SocialRecipeDetail from './pages/SocialRecipeDetail';
+import RolePreloader from './pages/RolePreloader';
 import './styles/global.css';
 
 function App() {
@@ -33,6 +39,7 @@ function App() {
         <Route path="/" element={<Home />} />
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
+        <Route path="/loading" element={<RolePreloader />} />
 
         {/* Protected Routes (Wrapped in Layout) */}
         <Route element={<Layout />}>
@@ -55,9 +62,12 @@ function App() {
           <Route element={<RequireAuth allowedRoles={['shopowner']} />}>
             <Route path="shop-owner" element={<Navigate to="/shop-owner/dashboard" replace />} />
             <Route path="shop-owner/dashboard" element={<ShopOwnerDashboard />} />
+            <Route path="shop-owner/inventory" element={<ShopOwnerInventory />} />
             <Route path="shop-owner/products" element={<ShopOwnerProducts />} />
             <Route path="shop-owner/orders" element={<ShopOwnerOrders />} />
+            <Route path="shop-owner/orders/:id" element={<ShopOwnerOrderDetail />} />
             <Route path="shop-owner/feedback" element={<ShopOwnerFeedback />} />
+            <Route path="shop-owner/settings" element={<ShopOwnerSettings />} />
           </Route>
 
           <Route element={<RequireAuth allowedRoles={['admin']} />}>
@@ -65,6 +75,8 @@ function App() {
             <Route path="admin/users" element={<AdminUsers />} />
             <Route path="admin/shops" element={<AdminShops />} />
             <Route path="admin/posts" element={<AdminPosts />} />
+            <Route path="admin/orders" element={<AdminOrders />} />
+            <Route path="admin/feedback" element={<AdminFeedback />} />
           </Route>
         </Route>
       </Routes>

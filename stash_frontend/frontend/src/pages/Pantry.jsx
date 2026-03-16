@@ -55,7 +55,7 @@ const Pantry = () => {
 
     useEffect(() => {
         const handleFocus = () => {
-            const refreshFlag = localStorage.getItem('pantry_refresh');
+            const refreshFlag = sessionStorage.getItem('pantry_refresh');
             if (refreshFlag) {
                 fetchPantry();
             }
@@ -85,7 +85,7 @@ const Pantry = () => {
             console.error('Failed to fetch pantry', err);
         } finally {
             setLoading(false);
-            localStorage.removeItem('pantry_refresh');
+            sessionStorage.removeItem('pantry_refresh');
         }
     };
 

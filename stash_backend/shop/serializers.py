@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from inventory.models import Ingredient
-from .models import Category, Product, Cart, CartItem, Order, OrderItem
+from .models import Category, Product, Cart, CartItem, Order, OrderItem, ShopProfile, StockMovement, Feedback
 
 
 # -------------------
@@ -98,20 +98,104 @@ class OrderItemSerializer(serializers.ModelSerializer):
 class OrderSerializer(serializers.ModelSerializer):
     items = OrderItemSerializer(many=True, read_only=True)
     user_email = serializers.ReadOnlyField(source="user.email")
+    user_location = serializers.ReadOnlyField(source="user.userprofile.location")
+    user_address = serializers.ReadOnlyField(source="user.userprofile.address")
+    user_phone = serializers.ReadOnlyField(source="user.userprofile.mobile_number")
+    payment_status = serializers.SerializerMethodField()
 
     class Meta:
         model = Order
         fields = [
             "id",
             "user_email",
+            "user_location",
+            "user_address",
+            "user_phone",
             "status",
+            "payment_status",
             "total_amount",
             "created_at",
             "updated_at",
             "delivered_at",
             "cancelled_at",
             "refunded_at",
+            "cancellation_reason",
+            "refund_reason",
             "needs_pantry_confirm",
             "pantry_applied",
             "items",
         ]
+
+    def get_payment_status(self, obj):
+        if obj.status == "REFUNDED":
+            return "REFUNDED"
+        if obj.status == "CANCELLED":
+            return "CANCELLED"
+        return "PAID"
+
+
+class ShopProfileSerializer(serializers.ModelSerializer):
+    owner_email = serializers.ReadOnlyField(source="owner.email")
+
+    class Meta:
+        model = ShopProfile
+        fields = [
+            "id",
+            "owner",
+            "owner_email",
+            "store_name",
+            "address",
+            "location",
+            "phone",
+            "hours",
+            "delivery_radius_km",
+            "min_order_amount",
+            "tax_rate",
+            "service_fee",
+            "logo",
+            "banner",
+            "updated_at",
+        ]
+        read_only_fields = ["owner", "updated_at", "owner_email"]
+
+
+class StockMovementSerializer(serializers.ModelSerializer):
+    product_name = serializers.ReadOnlyField(source="product.name")
+
+    class Meta:
+        model = StockMovement
+        fields = [
+            "id",
+            "product",
+            "product_name",
+            "change",
+            "reason",
+            "note",
+            "created_by",
+            "created_at",
+        ]
+        read_only_fields = ["created_by", "created_at", "product_name"]
+
+
+class FeedbackSerializer(serializers.ModelSerializer):
+    user_email = serializers.ReadOnlyField(source="user.email")
+    user_name = serializers.ReadOnlyField(source="user.first_name")
+    shop_owner_email = serializers.ReadOnlyField(source="shop_owner.email")
+
+    class Meta:
+        model = Feedback
+        fields = [
+            "id",
+            "user",
+            "user_email",
+            "user_name",
+            "shop_owner",
+            "shop_owner_email",
+            "order",
+            "rating",
+            "title",
+            "message",
+            "status",
+            "created_at",
+        ]
+        read_only_fields = ["user", "shop_owner", "created_at", "user_email", "user_name", "shop_owner_email"]
