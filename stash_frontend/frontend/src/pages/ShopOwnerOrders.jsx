@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { ShoppingBag, Truck, CheckCircle, PackageCheck, Eye, Box } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { shopOwnerService } from '../services/api';
+import { formatCurrency } from '../utils/currency';
 import '../styles/global.css';
 
 const ShopOwnerOrders = () => {
@@ -71,7 +72,7 @@ const ShopOwnerOrders = () => {
                                 <span style={styles.orderStatus}>{order.status}</span>
                             </div>
                             <div style={styles.orderMeta}>
-                                <div><ShoppingBag size={16} /> ${Number(order.total_amount || 0).toFixed(2)}</div>
+                                <div><ShoppingBag size={16} /> {formatCurrency(order.total_amount)}</div>
                                 <div><Truck size={16} /> {order.created_at?.slice(0, 10) || '--'}</div>
                             </div>
                             <div style={styles.orderActions}>

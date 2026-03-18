@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, CheckCircle, Package, RefreshCw, XCircle } from 'lucide-react';
 import { shopOwnerService } from '../services/api';
+import { formatCurrency } from '../utils/currency';
 import '../styles/global.css';
 
 const STATUS_FLOW = ['PLACED', 'CONFIRMED', 'PACKED', 'OUT_FOR_DELIVERY', 'DELIVERED', 'COMPLETED'];
@@ -81,7 +82,7 @@ const ShopOwnerOrderDetail = () => {
                 <div style={styles.infoCard}>
                     <h3>Payment</h3>
                     <p>Payment status: <strong>{order.payment_status}</strong></p>
-                    <p>Total: ${Number(order.total_amount || 0).toFixed(2)}</p>
+                    <p>Total: {formatCurrency(order.total_amount)}</p>
                 </div>
                 <div style={styles.infoCard}>
                     <h3>Timeline</h3>
@@ -128,7 +129,7 @@ const ShopOwnerOrderDetail = () => {
                             <tr key={item.id}>
                                 <td style={styles.td}>{item.product?.name}</td>
                                 <td style={styles.td}>{item.quantity}</td>
-                                <td style={styles.td}>${Number(item.price_each || 0).toFixed(2)}</td>
+                                <td style={styles.td}>{formatCurrency(item.price_each)}</td>
                                 <td style={styles.td}>{item.pack_size} {item.pack_unit}</td>
                             </tr>
                         ))}

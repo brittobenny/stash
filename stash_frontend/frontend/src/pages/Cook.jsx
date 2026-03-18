@@ -129,6 +129,7 @@ const Cook = () => {
     }, [availableNames, ingredientSearch]);
 
     const selectedSet = useMemo(() => new Set(selectedIngredients), [selectedIngredients]);
+    const pantryIsEmpty = availableNames.length === 0;
 
     const avgMatch = useMemo(() => {
         if (!recommendations.length) return 0;
@@ -285,32 +286,36 @@ const Cook = () => {
                         Selected {selectedIngredients.length} / {availableNames.length}
                     </div>
 
-                    <div style={styles.chipGrid}>
-                        {filteredNames.map((name) => {
-                            const active = selectedSet.has(name);
-                            return (
-                                <label
-                                    key={name}
-                                    style={active ? { ...styles.chip, ...styles.chipActive } : styles.chip}
-                                    className="hover-float"
-                                >
-                                    <input
-                                        type="checkbox"
-                                        checked={active}
-                                        onChange={() => toggleIngredient(name)}
-                                        style={styles.hiddenCheckbox}
-                                    />
-                                    <span>{name}</span>
-                                </label>
-                            );
-                        })}
-                        {availableNames.length === 0 && (
-                            <div style={styles.selectorEmpty}>No pantry ingredients available yet.</div>
-                        )}
-                        {availableNames.length > 0 && filteredNames.length === 0 && (
-                            <div style={styles.selectorEmpty}>No ingredients match your search.</div>
-                        )}
-                    </div>
+                    {pantryIsEmpty ? (
+                        <div style={styles.selectorEmptyBar}>
+                            <ChefHat size={18} />
+                            <span>Pantry shelves are currently empty.</span>
+                        </div>
+                    ) : (
+                        <div style={styles.chipGrid}>
+                            {filteredNames.map((name) => {
+                                const active = selectedSet.has(name);
+                                return (
+                                    <label
+                                        key={name}
+                                        style={active ? { ...styles.chip, ...styles.chipActive } : styles.chip}
+                                        className="hover-float"
+                                    >
+                                        <input
+                                            type="checkbox"
+                                            checked={active}
+                                            onChange={() => toggleIngredient(name)}
+                                            style={styles.hiddenCheckbox}
+                                        />
+                                        <span>{name}</span>
+                                    </label>
+                                );
+                            })}
+                            {filteredNames.length === 0 && (
+                                <div style={styles.selectorEmpty}>No ingredients match your search.</div>
+                            )}
+                        </div>
+                    )}
                 </section>
 
                 <section style={styles.resultsSection}>
@@ -394,7 +399,20 @@ const Cook = () => {
                             </div>
                         </div>
                     ) : recommendations.length === 0 ? (
-                        <div style={styles.emptyState}>{emptyMessage}</div>
+                        <div style={styles.emptyState}>
+                            <div style={styles.emptyStage}>
+                                <div style={styles.shelfFrame}>
+                                    <div style={styles.shelfGlowTop} />
+                                    <div style={styles.shelfGlowBottom} />
+                                    <div style={styles.shelfMessage}>
+                                        {pantryIsEmpty ? 'Add pantry items to reveal recommendations.' : emptyMessage}
+                                    </div>
+                                    <div style={styles.shelfBoardTop} />
+                                    <div style={styles.shelfBoardBottom} />
+                                    <div style={styles.shelfSpark} />
+                                </div>
+                            </div>
+                        </div>
                     ) : (
                         <div style={styles.recipeGrid}>
                             {recommendations.map((recipe, index) => {
@@ -483,8 +501,8 @@ const styles = {
     page: {
         width: '100%',
         minHeight: '100vh',
-        padding: '1.25rem 1.5rem 2rem',
-        background: 'linear-gradient(180deg, #faf9f8 0%, #f5f3f2 100%)',
+        padding: '1.1rem 1.4rem 2rem',
+        background: 'linear-gradient(180deg, #f4efe6 0%, #f8f5ef 16%, #f3f0eb 100%)',
     },
     container: {
         width: '100%',
@@ -495,14 +513,15 @@ const styles = {
         gap: '1rem',
     },
     headerCard: {
-        borderRadius: '18px',
-        border: '1px solid var(--color-border)',
-        background: 'var(--color-surface)',
-        padding: '1.1rem 1.2rem',
+        borderRadius: '22px',
+        border: '1px solid rgba(173, 156, 132, 0.24)',
+        background: 'linear-gradient(180deg, rgba(255,255,255,0.92), rgba(247,243,237,0.96))',
+        padding: '1.25rem 1.3rem',
         display: 'grid',
         gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
         gap: '1rem',
         alignItems: 'center',
+        boxShadow: '0 20px 40px rgba(125, 108, 82, 0.1)',
     },
     headerText: { minWidth: 0 },
     eyebrow: {
@@ -510,32 +529,33 @@ const styles = {
         fontSize: '0.78rem',
         fontWeight: 700,
         letterSpacing: '0.14em',
-        color: 'var(--color-primary)',
+        color: '#9f3f39',
     },
     title: {
-        fontFamily: 'var(--font-heading)',
+        fontFamily: 'Georgia, "Times New Roman", serif',
         fontSize: '2rem',
-        color: 'var(--color-text)',
+        color: '#241814',
         marginBottom: '0.35rem',
     },
-    subtitle: { color: 'var(--color-text-light)', maxWidth: '720px' },
+    subtitle: { color: '#5d5146', maxWidth: '720px', fontSize: '1rem' },
     metricGrid: {
         display: 'grid',
         gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
-        gap: '0.6rem',
+        gap: '0.75rem',
     },
     metricCard: {
-        borderRadius: '12px',
-        border: '1px solid var(--color-border)',
-        background: 'var(--color-surface-2)',
-        padding: '0.7rem',
+        borderRadius: '16px',
+        border: '1px solid rgba(168, 154, 131, 0.3)',
+        background: 'radial-gradient(circle at 15% 20%, rgba(255,255,255,0.96), rgba(246,243,238,0.92) 56%, rgba(238,233,226,0.92) 100%)',
+        padding: '0.8rem 0.9rem',
         display: 'flex',
         alignItems: 'center',
         gap: '0.55rem',
         minHeight: '70px',
+        boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.85), 0 10px 22px rgba(120, 105, 80, 0.1)',
     },
-    metricLabel: { fontSize: '0.78rem', color: 'var(--color-text-light)' },
-    metricValue: { fontWeight: 700, color: 'var(--color-text)', fontSize: '1.05rem' },
+    metricLabel: { fontSize: '0.78rem', color: '#6a5e53' },
+    metricValue: { fontWeight: 700, color: '#1f1612', fontSize: '1.6rem', lineHeight: 1 },
     errorBanner: {
         background: 'rgba(225,29,46,0.1)',
         color: 'var(--color-primary)',
@@ -544,14 +564,18 @@ const styles = {
         padding: '10px 14px',
     },
     filterCard: {
-        borderRadius: '18px',
-        border: '1px solid var(--color-border)',
-        background: 'var(--color-surface)',
+        borderRadius: '22px',
+        border: '1px solid rgba(173, 156, 132, 0.24)',
+        background: 'linear-gradient(180deg, rgba(255,255,255,0.88), rgba(247,243,237,0.95))',
         padding: '1rem',
         display: 'flex',
         flexDirection: 'column',
         gap: '0.75rem',
+        boxShadow: '0 18px 36px rgba(125, 108, 82, 0.1)',
+        position: 'relative',
+        overflow: 'hidden',
     },
+    filterCardBackground: {},
     filterTop: {
         display: 'grid',
         gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
@@ -562,11 +586,12 @@ const styles = {
         display: 'flex',
         alignItems: 'center',
         gap: '8px',
-        padding: '10px 12px',
-        borderRadius: '12px',
-        border: '1px solid var(--color-border)',
-        background: 'var(--color-surface-2)',
+        padding: '11px 14px',
+        borderRadius: '16px',
+        border: '1px solid rgba(182, 165, 140, 0.26)',
+        background: 'rgba(255,255,255,0.82)',
         minWidth: 0,
+        boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.9)',
     },
     searchInput: {
         flex: 1,
@@ -574,7 +599,7 @@ const styles = {
         border: 'none',
         outline: 'none',
         background: 'transparent',
-        color: 'var(--color-text)',
+        color: '#2f241e',
         fontSize: '0.95rem',
     },
     actions: {
@@ -585,38 +610,39 @@ const styles = {
         justifyContent: 'flex-end',
     },
     softBtn: {
-        border: '1px solid var(--color-border)',
-        borderRadius: '10px',
-        background: 'var(--color-surface-2)',
-        color: 'var(--color-text)',
-        padding: '9px 12px',
-        fontWeight: 600,
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: '6px',
-        cursor: 'pointer',
-    },
-    primaryBtn: {
-        border: '1px solid transparent',
-        borderRadius: '10px',
-        background: 'var(--color-primary)',
-        color: '#fff',
-        padding: '9px 14px',
+        border: '1px solid rgba(171, 154, 129, 0.28)',
+        borderRadius: '12px',
+        background: 'linear-gradient(180deg, rgba(255,255,255,0.96), rgba(238,233,226,0.96))',
+        color: '#251b16',
+        padding: '10px 14px',
         fontWeight: 700,
         display: 'inline-flex',
         alignItems: 'center',
         gap: '6px',
         cursor: 'pointer',
-        boxShadow: '0 8px 18px rgba(225,29,46,0.22)',
+        boxShadow: '0 10px 18px rgba(117, 101, 77, 0.08)',
     },
-    selectionInfo: { color: 'var(--color-text-light)', fontSize: '0.88rem' },
-    chipGrid: { display: 'flex', flexWrap: 'wrap', gap: '0.5rem', maxHeight: '170px', overflowY: 'auto', paddingRight: '2px' },
+    primaryBtn: {
+        border: '1px solid rgba(123, 30, 24, 0.18)',
+        borderRadius: '12px',
+        background: 'linear-gradient(135deg, #d63d2f 0%, #b81612 45%, #8d100f 100%)',
+        color: '#fff',
+        padding: '10px 15px',
+        fontWeight: 700,
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '6px',
+        cursor: 'pointer',
+        boxShadow: '0 12px 24px rgba(159, 24, 21, 0.28)',
+    },
+    selectionInfo: { color: '#5f5449', fontSize: '0.9rem' },
+    chipGrid: { display: 'flex', flexWrap: 'wrap', gap: '0.55rem', maxHeight: '170px', overflowY: 'auto', paddingRight: '2px' },
     chip: {
         borderRadius: '999px',
-        border: '1px solid var(--color-border)',
-        background: 'var(--color-surface-2)',
-        color: 'var(--color-text)',
-        padding: '7px 12px',
+        border: '1px solid rgba(177, 162, 138, 0.28)',
+        background: 'rgba(255,255,255,0.84)',
+        color: '#2d231d',
+        padding: '8px 13px',
         fontSize: '0.88rem',
         display: 'inline-flex',
         alignItems: 'center',
@@ -625,19 +651,33 @@ const styles = {
         transition: 'all 0.2s ease',
     },
     chipActive: {
-        border: '1px solid rgba(225,29,46,0.34)',
-        background: 'rgba(225,29,46,0.1)',
-        color: 'var(--color-primary)',
-        boxShadow: '0 4px 12px rgba(225,29,46,0.15)',
+        border: '1px solid rgba(188, 44, 42, 0.32)',
+        background: 'linear-gradient(135deg, rgba(250,223,218,0.96), rgba(250,239,236,0.92))',
+        color: '#a41b1a',
+        boxShadow: '0 8px 18px rgba(166, 34, 29, 0.12)',
     },
     hiddenCheckbox: { display: 'none' },
+    selectorEmptyBar: {
+        borderRadius: '14px',
+        border: '1px solid rgba(179, 162, 137, 0.26)',
+        background: 'rgba(255,255,255,0.78)',
+        padding: '12px 16px',
+        width: '100%',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: '10px',
+        color: '#5e4f44',
+        boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.88)',
+    },
     selectorEmpty: {
-        color: 'var(--color-text-light)',
+        color: '#65594e',
         fontSize: '0.9rem',
-        border: '1px dashed var(--color-border)',
-        borderRadius: '12px',
+        border: '1px dashed rgba(177, 162, 138, 0.28)',
+        borderRadius: '14px',
         padding: '10px 12px',
         width: '100%',
+        background: 'rgba(255,255,255,0.65)',
     },
     resultsSection: { minHeight: '280px' },
     aiLoadingStage: {
@@ -785,12 +825,92 @@ const styles = {
         fontWeight: 600,
     },
     emptyState: {
-        borderRadius: '16px',
-        border: '1px dashed var(--color-border)',
-        background: 'var(--color-surface)',
-        padding: '2.2rem 1.2rem',
+        borderRadius: '24px',
+        border: '1px solid rgba(173, 156, 132, 0.24)',
+        background: 'linear-gradient(180deg, rgba(255,255,255,0.92), rgba(246,242,236,0.95))',
+        padding: '1rem',
         textAlign: 'center',
-        color: 'var(--color-text-light)',
+        color: '#615649',
+        boxShadow: '0 18px 36px rgba(125, 108, 82, 0.1)',
+    },
+    emptyStage: {
+        minHeight: '260px',
+        borderRadius: '20px',
+        background: 'linear-gradient(180deg, rgba(250,248,245,0.96), rgba(239,235,229,0.96))',
+        border: '1px solid rgba(180, 165, 145, 0.22)',
+        padding: '0.95rem',
+        display: 'flex',
+        alignItems: 'stretch',
+    },
+    shelfFrame: {
+        width: '100%',
+        minHeight: '230px',
+        borderRadius: '18px',
+        position: 'relative',
+        overflow: 'hidden',
+        background: 'linear-gradient(180deg, #f7f5f2 0%, #ece8e1 100%)',
+        border: '1px solid rgba(162, 147, 125, 0.22)',
+        boxShadow: 'inset 0 0 0 8px rgba(231, 226, 219, 0.72)',
+    },
+    shelfGlowTop: {
+        position: 'absolute',
+        left: '8%',
+        right: '8%',
+        top: '22%',
+        height: '12px',
+        background: 'radial-gradient(circle, rgba(255,255,255,0.78) 0%, rgba(255,255,255,0.18) 72%, transparent 74%)',
+        filter: 'blur(6px)',
+    },
+    shelfGlowBottom: {
+        position: 'absolute',
+        left: '8%',
+        right: '8%',
+        top: '58%',
+        height: '12px',
+        background: 'radial-gradient(circle, rgba(255,255,255,0.74) 0%, rgba(255,255,255,0.14) 72%, transparent 74%)',
+        filter: 'blur(6px)',
+    },
+    shelfMessage: {
+        position: 'absolute',
+        top: '26px',
+        left: '50%',
+        transform: 'translateX(-50%)',
+        fontSize: '1rem',
+        color: '#2f2620',
+        fontWeight: 500,
+        textAlign: 'center',
+        width: '100%',
+        padding: '0 20px',
+    },
+    shelfBoardTop: {
+        position: 'absolute',
+        left: '22px',
+        right: '22px',
+        top: '76px',
+        height: '8px',
+        borderRadius: '999px',
+        background: 'linear-gradient(180deg, rgba(143, 161, 163, 0.85), rgba(193, 213, 213, 0.64))',
+        boxShadow: '0 2px 0 rgba(255,255,255,0.7), 0 10px 18px rgba(137, 155, 156, 0.16)',
+    },
+    shelfBoardBottom: {
+        position: 'absolute',
+        left: '22px',
+        right: '22px',
+        top: '150px',
+        height: '8px',
+        borderRadius: '999px',
+        background: 'linear-gradient(180deg, rgba(143, 161, 163, 0.85), rgba(193, 213, 213, 0.64))',
+        boxShadow: '0 2px 0 rgba(255,255,255,0.7), 0 10px 18px rgba(137, 155, 156, 0.16)',
+    },
+    shelfSpark: {
+        position: 'absolute',
+        right: '22px',
+        bottom: '20px',
+        width: '26px',
+        height: '26px',
+        background: 'radial-gradient(circle, rgba(255,255,255,0.9) 0%, rgba(255,255,255,0.12) 55%, transparent 58%)',
+        transform: 'rotate(45deg)',
+        filter: 'blur(0.4px)',
     },
     recipeGrid: {
         display: 'grid',

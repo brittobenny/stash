@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { CreditCard, ShieldCheck, ArrowLeft } from 'lucide-react';
 import { shopService } from '../services/api';
+import { formatCurrency } from '../utils/currency';
 import '../styles/global.css';
 
 const Payment = () => {
@@ -67,7 +68,7 @@ const Payment = () => {
                 <div style={styles.summary}>
                     <div style={styles.row}>
                         <span>Total Amount</span>
-                        <strong>${Number(order.total_amount).toFixed(2)}</strong>
+                        <strong>{formatCurrency(order.total_amount)}</strong>
                     </div>
                     <div style={styles.row}>
                         <span>Status</span>

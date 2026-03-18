@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-    DollarSign,
+    IndianRupee,
     Package,
     Layers,
     TrendingUp,
@@ -9,6 +9,7 @@ import {
     Download,
 } from 'lucide-react';
 import { shopOwnerService } from '../services/api';
+import { formatCurrency } from '../utils/currency';
 import '../styles/global.css';
 
 const isoDate = (d) => d.toISOString().slice(0, 10);
@@ -116,10 +117,10 @@ const ShopOwnerDashboard = () => {
                 </div>
                 <div style={styles.heroPanel}>
                     <div style={styles.panelCard}>
-                        <div style={styles.panelIcon}><DollarSign size={18} /></div>
+                        <div style={styles.panelIcon}><IndianRupee size={18} /></div>
                         <div>
                             <p style={styles.panelLabel}>Revenue</p>
-                            <p style={styles.panelValue}>${Number(summary.total_revenue || 0).toFixed(2)}</p>
+                            <p style={styles.panelValue}>{formatCurrency(summary.total_revenue)}</p>
                         </div>
                     </div>
                     <div style={styles.panelCard}>
@@ -140,7 +141,7 @@ const ShopOwnerDashboard = () => {
                         <div style={styles.panelIcon}><TrendingUp size={18} /></div>
                         <div>
                             <p style={styles.panelLabel}>Avg order value</p>
-                            <p style={styles.panelValue}>${Number(summary.avg_order_value || 0).toFixed(2)}</p>
+                            <p style={styles.panelValue}>{formatCurrency(summary.avg_order_value)}</p>
                         </div>
                     </div>
                 </div>
@@ -204,7 +205,7 @@ const ShopOwnerDashboard = () => {
                                             ...styles.chartBar,
                                             height: `${Math.max(10, (Number(item.revenue || 0) / maxRevenue) * 100)}%`,
                                         }}
-                                        title={`$${Number(item.revenue || 0).toFixed(2)}`}
+                                        title={`Revenue: ${formatCurrency(item.revenue)}`}
                                     ></div>
                                     <span>
                                         {chartMode === 'day' && item.date?.slice(5)}
@@ -236,7 +237,7 @@ const ShopOwnerDashboard = () => {
                                     <tr key={p.product_id}>
                                         <td style={styles.td}>{p.name}</td>
                                         <td style={styles.td}>{p.units_sold}</td>
-                                        <td style={styles.td}>${Number(p.revenue || 0).toFixed(2)}</td>
+                                        <td style={styles.td}>{formatCurrency(p.revenue)}</td>
                                         <td style={styles.td}>
                                             {p.stock_quantity}
                                             {p.low_stock ? <span style={styles.lowTag}>Low</span> : null}

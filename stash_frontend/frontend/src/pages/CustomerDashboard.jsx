@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Heart, ShoppingCart, ChefHat, Package, Plus, Minus, Check, Loader } from 'lucide-react';
 import { pantryService, shopService } from '../services/api';
+import { formatCurrency } from '../utils/currency';
 import '../styles/global.css';
 
 const CustomerDashboard = () => {
@@ -162,7 +163,7 @@ const CustomerDashboard = () => {
                                 <div style={styles.cardContent}>
                                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                                         <h3>{product.name}</h3>
-                                        <span style={styles.price}>${typeof product.price === 'number' ? product.price.toFixed(2) : product.price}</span>
+                                        <span style={styles.price}>{formatCurrency(product.price)}</span>
                                     </div>
                                     <p style={{ fontSize: '0.8rem', color: '#666', marginBottom: '0.5rem' }}>{product.category}</p>
                                     <button style={styles.actionBtn} onClick={() => addToCart(product)}>

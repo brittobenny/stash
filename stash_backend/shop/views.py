@@ -1,10 +1,13 @@
 import csv
+import math
 from datetime import datetime, timedelta
 
+from django.conf import settings
 from django.db import transaction
 from django.db.models.deletion import ProtectedError
 from django.db.models import F, Q, Sum, Count, DecimalField, ExpressionWrapper, Value
 from django.db.models.functions import Coalesce, TruncDate, TruncWeek, TruncMonth
+from django.core.mail import send_mail
 from django.utils import timezone
 from django.http import HttpResponse
 
@@ -20,6 +23,7 @@ from .serializers import ProductSerializer, CartSerializer, OrderSerializer, Cat
 from .permissions import IsShopOwner, IsAdmin
 
 from inventory.models import PantryItem, Ingredient
+from inventory.low_stock import build_low_stock_snapshot, sync_low_stock_notifications_for_user
 
 
 # ----------------------------
@@ -41,6 +45,49 @@ def _notify(user, title, message, type="order", data=None):
         )
     except Exception:
         pass
+
+
+def _send_order_placed_email(order_id: int) -> None:
+    order = Order.objects.select_related("user").filter(id=order_id).first()
+    if not order:
+        return
+
+    recipient = str(getattr(order.user, "email", "") or "").strip()
+    if not recipient:
+        return
+
+    items = list(OrderItem.objects.select_related("product").filter(order=order))
+    item_lines = [
+        f"- {item.product.name} x {item.quantity} @ ${float(item.price_each or 0):.2f}"
+        for item in items
+    ]
+    customer_name = str(getattr(order.user, "first_name", "") or "").strip() or order.user.username
+
+    message_lines = [
+        f"Hi {customer_name},",
+        "",
+        f"Your order #{order.id} has been placed successfully.",
+        f"Status: {order.status}",
+        f"Total: ${float(order.total_amount or 0):.2f}",
+    ]
+    if item_lines:
+        message_lines.extend(["", "Items:"])
+        message_lines.extend(item_lines)
+    message_lines.extend([
+        "",
+        "You can review your order in the Stash app.",
+    ])
+
+    try:
+        send_mail(
+            subject=f"Stash order #{order.id} confirmed",
+            message="\n".join(message_lines),
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[recipient],
+            fail_silently=False,
+        )
+    except Exception as exc:
+        print(f"Order email failed for order #{order.id}: {exc}")
 
 
 def _normalize_unit_key(unit: str) -> str:
@@ -94,6 +141,141 @@ def _parse_date(value):
         return datetime.strptime(value, "%Y-%m-%d").date()
     except ValueError:
         return None
+
+
+def _sort_products_for_user(products, user_location: str):
+    target = str(user_location or "").strip().lower()
+
+    def _key(product):
+        profile = getattr(getattr(product, "owner", None), "userprofile", None)
+        owner_location = str(profile.location or "").strip().lower() if profile else ""
+        location_match = 0 if (target and owner_location and target in owner_location) else 1
+        price = float(product.price or 0)
+        return (location_match, price, product.id)
+
+    return sorted(products, key=_key)
+
+
+def _build_restock_bill(user):
+    profile = UserProfile.objects.filter(user=user).first()
+    user_location = str(profile.location or "").strip() if profile else ""
+    pantry_items = list(
+        PantryItem.objects.select_related("ingredient").filter(user=user).order_by("ingredient__name")
+    )
+    ingredient_ids = [item.ingredient_id for item in pantry_items if item.ingredient_id]
+    products_by_ingredient = {}
+    if ingredient_ids:
+        product_qs = Product.objects.select_related("owner", "owner__userprofile", "ingredient").filter(
+            is_active=True,
+            stock_quantity__gt=0,
+            ingredient_id__in=ingredient_ids,
+        )
+        for product in product_qs:
+            products_by_ingredient.setdefault(product.ingredient_id, []).append(product)
+
+    items = []
+    subtotal = 0.0
+    unmatched_count = 0
+
+    for pantry_item in pantry_items:
+        snapshot = build_low_stock_snapshot(pantry_item)
+        if not snapshot["is_low_stock"]:
+            continue
+
+        ingredient = pantry_item.ingredient
+        current_quantity = float(pantry_item.quantity or 0)
+        effective_limit = float(snapshot["effective_low_stock_limit"])
+        desired_quantity = max(effective_limit * 2.0, effective_limit)
+        deficit_quantity = max(0.0, desired_quantity - current_quantity)
+        matched_products = _sort_products_for_user(products_by_ingredient.get(ingredient.id, []), user_location)
+
+        bill_item = {
+            "pantry_item_id": pantry_item.id,
+            "ingredient_id": ingredient.id,
+            "ingredient_name": ingredient.name,
+            "unit": snapshot["unit"],
+            "current_quantity": current_quantity,
+            "low_stock_limit": effective_limit,
+            "desired_quantity": round(desired_quantity, 2),
+            "deficit_quantity": round(deficit_quantity, 2),
+            "matched": False,
+            "product_options": [],
+        }
+
+        for product in matched_products[:3]:
+            replenishment_per_unit = convert_to_default_unit(
+                float(product.pack_size or 1),
+                product.pack_unit or product.unit,
+                ingredient.default_unit,
+            )
+            if replenishment_per_unit is None or replenishment_per_unit <= 0:
+                continue
+
+            suggested_units = max(1, math.ceil(deficit_quantity / replenishment_per_unit))
+            suggested_units = min(suggested_units, int(product.stock_quantity or 0))
+            if suggested_units <= 0:
+                continue
+            option_payload = {
+                "product_id": product.id,
+                "product_name": product.name,
+                "owner_location": getattr(product.owner.userprofile, "location", "") if hasattr(product.owner, "userprofile") else "",
+                "price": float(product.price or 0),
+                "pack_size": float(product.pack_size or 1),
+                "pack_unit": product.pack_unit or product.unit,
+                "stock_quantity": int(product.stock_quantity or 0),
+                "replenishment_per_unit": round(float(replenishment_per_unit), 2),
+                "suggested_quantity": suggested_units,
+                "line_total": round(float(product.price or 0) * suggested_units, 2),
+            }
+            bill_item["product_options"].append(option_payload)
+
+        if bill_item["product_options"]:
+            best_option = bill_item["product_options"][0]
+            bill_item.update(
+                {
+                    "matched": True,
+                    "product_id": best_option["product_id"],
+                    "product_name": best_option["product_name"],
+                    "owner_location": best_option["owner_location"],
+                    "price": best_option["price"],
+                    "pack_size": best_option["pack_size"],
+                    "pack_unit": best_option["pack_unit"],
+                    "stock_quantity": best_option["stock_quantity"],
+                    "replenishment_per_unit": best_option["replenishment_per_unit"],
+                    "suggested_quantity": best_option["suggested_quantity"],
+                    "estimated_total": best_option["line_total"],
+                }
+            )
+            subtotal += best_option["line_total"]
+        else:
+            bill_item.update(
+                {
+                    "product_id": None,
+                    "product_name": None,
+                    "owner_location": "",
+                    "price": 0.0,
+                    "pack_size": None,
+                    "pack_unit": "",
+                    "stock_quantity": 0,
+                    "replenishment_per_unit": None,
+                    "suggested_quantity": 0,
+                    "estimated_total": 0.0,
+                    "reason": "No matching in-stock shop product found for this ingredient.",
+                }
+            )
+            unmatched_count += 1
+
+        items.append(bill_item)
+
+    return {
+        "items": items,
+        "summary": {
+            "item_count": len(items),
+            "matched_count": sum(1 for item in items if item["matched"]),
+            "unmatched_count": unmatched_count,
+            "estimated_total": round(subtotal, 2),
+        },
+    }
 
 
 def _owner_analytics_payload(user, date_from, date_to):
@@ -353,6 +535,61 @@ def get_cart(request):
     return Response(CartSerializer(_get_cart(request.user)).data)
 
 
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def get_restock_bill(request):
+    return Response(_build_restock_bill(request.user))
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def apply_restock_bill(request):
+    profile = UserProfile.objects.filter(user=request.user).first()
+    if not profile or not (profile.address and profile.location):
+        return Response({"error": "profile_incomplete"}, status=400)
+
+    bill = _build_restock_bill(request.user)
+    cart = _get_cart(request.user)
+    applied = []
+    skipped = []
+
+    for item in bill["items"]:
+        product_id = item.get("product_id")
+        suggested_quantity = int(item.get("suggested_quantity") or 0)
+        if not product_id or suggested_quantity <= 0:
+            skipped.append(
+                {
+                    "ingredient_name": item.get("ingredient_name"),
+                    "reason": item.get("reason") or "No product suggestion available.",
+                }
+            )
+            continue
+
+        cart_item, _ = CartItem.objects.update_or_create(
+            cart=cart,
+            product_id=product_id,
+            defaults={"quantity": suggested_quantity},
+        )
+        applied.append(
+            {
+                "ingredient_name": item.get("ingredient_name"),
+                "product_name": item.get("product_name"),
+                "quantity": cart_item.quantity,
+            }
+        )
+
+    return Response(
+        {
+            "message": "Restock bill loaded into cart.",
+            "applied_count": len(applied),
+            "applied": applied,
+            "skipped": skipped,
+            "bill": bill,
+            "cart": CartSerializer(cart).data,
+        }
+    )
+
+
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def cart_add(request):
@@ -467,6 +704,7 @@ def checkout(request):
         order.save(update_fields=["total_amount"])
 
         CartItem.objects.filter(cart=cart).delete()
+        transaction.on_commit(lambda order_id=order.id: _send_order_placed_email(order_id))
 
     _notify(
         request.user,
@@ -662,6 +900,7 @@ def confirm_add_to_pantry(request, order_id):
         type="system",
         data={"order_id": order.id, "status": order.status},
     )
+    sync_low_stock_notifications_for_user(request.user)
 
     return Response({
         "status": "ok",

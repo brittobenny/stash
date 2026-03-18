@@ -1,12 +1,44 @@
 .social-page {
+  position: relative;
   padding: 2.4rem 2.8rem 3.5rem;
-  background: radial-gradient(circle at 15% 10%, rgba(255, 230, 225, 0.7), transparent 45%),
-    radial-gradient(circle at 85% 20%, rgba(220, 234, 255, 0.7), transparent 40%),
-    linear-gradient(180deg, #f9f6f2 0%, #fefefe 100%);
+  background:
+    radial-gradient(circle at 10% 12%, rgba(255, 185, 196, 0.45), transparent 34%),
+    radial-gradient(circle at 27% 58%, rgba(255, 215, 222, 0.52), transparent 26%),
+    radial-gradient(circle at 83% 18%, rgba(187, 224, 255, 0.56), transparent 28%),
+    radial-gradient(circle at 93% 72%, rgba(221, 238, 255, 0.66), transparent 24%),
+    linear-gradient(135deg, #fff6f5 0%, #fff8fb 34%, #f7fbff 70%, #eef6ff 100%);
   min-height: 100vh;
+  overflow: hidden;
+}
+
+.social-page::before,
+.social-page::after {
+  content: "";
+  position: absolute;
+  border-radius: 999px;
+  pointer-events: none;
+  filter: blur(4px);
+}
+
+.social-page::before {
+  width: 420px;
+  height: 420px;
+  top: -140px;
+  left: -110px;
+  background: radial-gradient(circle, rgba(255, 198, 207, 0.55) 0%, rgba(255, 198, 207, 0.1) 58%, transparent 72%);
+}
+
+.social-page::after {
+  width: 360px;
+  height: 360px;
+  right: -80px;
+  bottom: -100px;
+  background: radial-gradient(circle, rgba(205, 229, 255, 0.58) 0%, rgba(205, 229, 255, 0.12) 60%, transparent 76%);
 }
 
 .social-shell {
+  position: relative;
+  z-index: 1;
   display: grid;
   grid-template-columns: 260px minmax(0, 1fr) 300px;
   gap: 1.6rem;
@@ -22,14 +54,16 @@
 }
 
 .social-page .card {
-  background: #fff;
-  border-radius: 20px;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  box-shadow: 0 16px 36px rgba(17, 24, 39, 0.08);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.42));
+  border-radius: 26px;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  box-shadow: 0 24px 60px rgba(127, 146, 181, 0.16);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
 }
 
 .social-page .card:hover {
-  box-shadow: 0 24px 48px rgba(17, 24, 39, 0.12);
+  box-shadow: 0 28px 64px rgba(127, 146, 181, 0.2);
   transform: translateY(-2px);
   transition: all 0.2s ease;
 }
@@ -38,13 +72,16 @@
   padding: 1.4rem;
   position: sticky;
   top: 1.2rem;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.46), rgba(255, 240, 245, 0.68)),
+    radial-gradient(circle at top left, rgba(255, 186, 198, 0.34), transparent 52%);
 }
 
 .sidebar-brand {
   font-size: 0.7rem;
   letter-spacing: 0.3em;
   text-transform: uppercase;
-  color: #94a3b8;
+  color: #7a6d80;
   font-weight: 700;
 }
 
@@ -61,15 +98,15 @@
 
 .profile-block span {
   font-size: 0.85rem;
-  color: #64748b;
+  color: #7d6f83;
 }
 
 .profile-avatar {
   width: 54px;
   height: 54px;
   border-radius: 16px;
-  background: rgba(225, 29, 46, 0.12);
-  color: var(--color-primary);
+  background: linear-gradient(135deg, rgba(252, 214, 221, 0.95), rgba(247, 201, 212, 0.72));
+  color: #b44f63;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -79,7 +116,7 @@
 
 .sidebar-note {
   margin: 0.8rem 0 1rem;
-  color: #6b7280;
+  color: #5f5567;
   font-size: 0.92rem;
 }
 
@@ -91,17 +128,18 @@
 
 .sidebar-stats div {
   text-align: center;
-  padding: 0.6rem 0.4rem;
-  border-radius: 14px;
-  background: rgba(225, 29, 46, 0.08);
+  padding: 0.75rem 0.4rem;
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(255, 214, 222, 0.64), rgba(255, 244, 247, 0.75));
+  border: 1px solid rgba(255, 255, 255, 0.46);
 }
 
 .sidebar-stats div:nth-child(2) {
-  background: rgba(59, 130, 246, 0.12);
+  background: linear-gradient(180deg, rgba(224, 219, 255, 0.7), rgba(245, 240, 255, 0.82));
 }
 
 .sidebar-stats div:nth-child(3) {
-  background: rgba(34, 197, 94, 0.12);
+  background: linear-gradient(180deg, rgba(233, 231, 214, 0.7), rgba(247, 245, 233, 0.82));
 }
 
 .sidebar-stats strong {
@@ -110,7 +148,7 @@
 }
 
 .sidebar-stats span {
-  color: #6b7280;
+  color: #72687a;
   font-size: 0.75rem;
 }
 
@@ -124,23 +162,36 @@
 .social-page .btn-primary,
 .social-page .btn-secondary {
   border-radius: 999px;
-  padding: 10px 16px;
-  font-weight: 600;
+  padding: 12px 18px;
+  font-weight: 700;
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
   justify-content: center;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.social-page .btn-primary {
+  color: #fff;
+  background: linear-gradient(135deg, #f32133 0%, #dc1829 100%);
+  box-shadow: 0 16px 30px rgba(225, 29, 46, 0.24);
+}
+
+.social-page .btn-primary:hover,
+.social-page .btn-secondary:hover {
+  transform: translateY(-1px);
 }
 
 .social-page .btn-secondary {
-  background: #fff;
-  border: 1px solid rgba(15, 23, 42, 0.12);
-  color: #111827;
+  background: rgba(255, 255, 255, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  color: #201b26;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.58);
 }
 
 .social-page .btn-secondary:hover {
-  border-color: rgba(225, 29, 46, 0.3);
-  color: var(--color-primary);
+  border-color: rgba(229, 77, 102, 0.28);
+  color: #c41d31;
 }
 
 .sidebar-nav {
@@ -157,15 +208,15 @@
   border-radius: 14px;
   text-align: left;
   font-weight: 600;
-  color: #374151;
+  color: #362f3c;
   cursor: pointer;
   transition: all 0.2s ease;
 }
 
 .nav-item.active,
 .nav-item:hover {
-  background: rgba(225, 29, 46, 0.12);
-  color: var(--color-primary);
+  background: linear-gradient(135deg, rgba(247, 196, 206, 0.8), rgba(247, 211, 219, 0.58));
+  color: #bf1c31;
 }
 
 .saas-hero {
@@ -173,24 +224,27 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) 320px;
   gap: 1.6rem;
-  background: linear-gradient(135deg, #ffffff 0%, #fff3f0 100%);
-  border: 1px solid rgba(225, 29, 46, 0.18);
+  background:
+    radial-gradient(circle at 18% 30%, rgba(255, 210, 219, 0.4), transparent 34%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.64) 0%, rgba(255, 244, 246, 0.74) 42%, rgba(239, 247, 255, 0.72) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.72);
 }
 
 .kicker {
   letter-spacing: 0.2em;
   font-size: 0.75rem;
-  color: #94a3b8;
+  color: #7c7488;
   text-transform: uppercase;
 }
 
 .saas-hero h1 {
   font-size: 2.1rem;
   margin: 0.4rem 0 0.6rem;
+  color: #21161e;
 }
 
 .hero-sub {
-  color: #6b7280;
+  color: #54495a;
   max-width: 520px;
 }
 
@@ -204,10 +258,11 @@
   display: flex;
   align-items: center;
   gap: 0.6rem;
-  padding: 0.7rem 0.9rem;
-  border-radius: 14px;
-  border: 1px solid rgba(15, 23, 42, 0.12);
-  background: #fff;
+  padding: 0.85rem 1rem;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.78);
+  background: rgba(255, 255, 255, 0.4);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.54);
 }
 
 .hero-search input {
@@ -215,6 +270,8 @@
   outline: none;
   width: 100%;
   font-size: 0.95rem;
+  background: transparent;
+  color: #2b2430;
 }
 
 .hero-actions {
@@ -329,16 +386,18 @@
 .toggle-btn {
   border-radius: 999px;
   padding: 0.55rem 1rem;
-  border: 1px solid rgba(15, 23, 42, 0.12);
-  background: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  background: rgba(255, 255, 255, 0.42);
   font-weight: 600;
   cursor: pointer;
+  color: #3d3442;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.52);
 }
 
 .toggle-btn.active {
-  background: rgba(225, 29, 46, 0.12);
-  border-color: rgba(225, 29, 46, 0.4);
-  color: var(--color-primary);
+  background: linear-gradient(135deg, rgba(247, 196, 206, 0.8), rgba(245, 219, 225, 0.65));
+  border-color: rgba(228, 90, 113, 0.36);
+  color: #c61f33;
 }
 
 .social-feed {
@@ -551,11 +610,11 @@
 .social-empty,
 .social-loading {
   padding: 2rem;
-  background: #fff;
+  background: rgba(255, 255, 255, 0.48);
   border-radius: 16px;
-  border: 1px dashed rgba(0, 0, 0, 0.1);
+  border: 1px dashed rgba(233, 153, 172, 0.34);
   text-align: center;
-  color: #6b7280;
+  color: #62586b;
 }
 
 .insight-card {
@@ -563,7 +622,9 @@
 }
 
 .insight-card.soft {
-  background: linear-gradient(135deg, rgba(255, 248, 237, 0.9), #fff);
+  background:
+    radial-gradient(circle at top right, rgba(205, 228, 255, 0.56), transparent 38%),
+    linear-gradient(160deg, rgba(246, 250, 255, 0.74), rgba(234, 245, 255, 0.82));
 }
 
 .insight-row {
@@ -589,8 +650,8 @@
 .follow-item button {
   margin-left: auto;
   border: none;
-  background: rgba(225, 29, 46, 0.12);
-  color: var(--color-primary);
+  background: rgba(246, 218, 226, 0.86);
+  color: #c31d31;
   border-radius: 999px;
   width: 32px;
   height: 32px;
@@ -598,7 +659,7 @@
 }
 
 .follow-item button:hover {
-  background: rgba(225, 29, 46, 0.22);
+  background: rgba(242, 192, 203, 0.96);
 }
 
 .highlight-tags {
@@ -619,6 +680,9 @@
 
 .highlight-card {
   padding: 1.2rem;
+  background:
+    radial-gradient(circle at 88% 16%, rgba(198, 226, 255, 0.62), transparent 28%),
+    linear-gradient(160deg, rgba(245, 250, 255, 0.76), rgba(230, 242, 255, 0.82));
 }
 
 .highlight-header {
@@ -630,13 +694,13 @@
 
 .highlight-count {
   font-size: 0.75rem;
-  color: #94a3b8;
+  color: #7c91b1;
   text-transform: uppercase;
   letter-spacing: 0.08em;
 }
 
 .highlight-empty {
-  color: #94a3b8;
+  color: #7a8699;
   font-size: 0.9rem;
 }
 
@@ -667,7 +731,7 @@
   height: 160px;
   object-fit: cover;
   border-radius: 16px;
-  border: 1px solid rgba(15, 23, 42, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.68);
 }
 
 .highlight-body {
@@ -685,7 +749,7 @@
   display: flex;
   justify-content: space-between;
   font-size: 0.85rem;
-  color: #6b7280;
+  color: #64748b;
 }
 
 /* Instagram-style feed */
@@ -706,10 +770,12 @@
 }
 
 .insta-card {
-  border-radius: 22px;
-  background: #fff;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  box-shadow: 0 18px 30px rgba(17, 24, 39, 0.08);
+  border-radius: 26px;
+  background:
+    radial-gradient(circle at 12% 12%, rgba(255, 215, 223, 0.38), transparent 28%),
+    linear-gradient(160deg, rgba(255, 255, 255, 0.7), rgba(255, 250, 251, 0.66) 44%, rgba(242, 248, 255, 0.78) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.68);
+  box-shadow: 0 22px 36px rgba(136, 152, 183, 0.16);
   overflow: hidden;
 }
 
@@ -729,15 +795,15 @@
 .insta-author span {
   display: block;
   font-size: 0.8rem;
-  color: #94a3b8;
+  color: #7a7488;
 }
 
 .insta-avatar {
   width: 42px;
   height: 42px;
   border-radius: 50%;
-  background: rgba(225, 29, 46, 0.12);
-  color: var(--color-primary);
+  background: linear-gradient(135deg, rgba(255, 217, 225, 0.96), rgba(246, 230, 255, 0.76));
+  color: #bb5064;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -753,7 +819,7 @@
 
 .insta-save {
   border: none;
-  background: rgba(15, 23, 42, 0.04);
+  background: rgba(255, 255, 255, 0.5);
   width: 34px;
   height: 34px;
   border-radius: 999px;
@@ -783,11 +849,11 @@
 .insta-title {
   font-weight: 700;
   font-size: 1.05rem;
-  color: #111827;
+  color: #241721;
 }
 
 .insta-caption {
-  color: #6b7280;
+  color: #5b5360;
   font-size: 0.92rem;
 }
 
@@ -799,7 +865,7 @@
   display: inline-flex;
   margin-top: 0.2rem;
   font-size: 0.85rem;
-  color: var(--color-primary);
+  color: #c61f33;
   font-weight: 600;
 }
 
@@ -926,10 +992,10 @@
 .modal {
   width: 92%;
   max-width: 720px;
-  background: #ffffff;
-  border-radius: 18px;
-  border: 1px solid rgba(0, 0, 0, 0.08);
-  box-shadow: 0 28px 60px rgba(0, 0, 0, 0.18);
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.88), rgba(252, 246, 248, 0.92));
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  box-shadow: 0 28px 60px rgba(90, 72, 88, 0.24);
   max-height: 90vh;
   display: flex;
   flex-direction: column;

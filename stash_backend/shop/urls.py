@@ -9,6 +9,8 @@ from .views import (
 
     # cart + order functions (they are functions in views.py)
     get_cart,
+    get_restock_bill,
+    apply_restock_bill,
     cart_add,
     cart_update,
     checkout,
@@ -47,6 +49,8 @@ urlpatterns = [
 
     # cart
     path("cart/", get_cart),
+    path("restock-bill/", get_restock_bill),
+    path("restock-bill/apply/", apply_restock_bill),
     path("cart/add/", cart_add),
     path("cart/item/<int:item_id>/", cart_update),
 

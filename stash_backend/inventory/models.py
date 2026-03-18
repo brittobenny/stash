@@ -51,6 +51,7 @@ class PantryItem(models.Model):
     ingredient = models.ForeignKey(Ingredient, on_delete=models.CASCADE)
     quantity = models.FloatField()
     expiry_date = models.DateField(null=True, blank=True)
+    low_stock_limit = models.FloatField(null=True, blank=True)
 
     class Meta:
         unique_together = ('user', 'ingredient')

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PackageCheck, Truck, ClipboardList, XCircle } from 'lucide-react';
 import { shopService } from '../services/api';
+import { formatCurrency } from '../utils/currency';
 import '../styles/global.css';
 
 const Orders = () => {
@@ -102,7 +103,7 @@ const Orders = () => {
                                     <h3>Order #{order.id}</h3>
                                     <p style={styles.cardMeta}>{order.status}</p>
                                 </div>
-                                <strong>${Number(order.total_amount).toFixed(2)}</strong>
+                                <strong>{formatCurrency(order.total_amount)}</strong>
                             </div>
 
                             <div style={styles.items}>

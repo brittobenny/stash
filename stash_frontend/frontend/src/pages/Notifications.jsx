@@ -9,6 +9,7 @@ const Notifications = () => {
     const navigate = useNavigate();
     const [notifications, setNotifications] = useState([]);
     const [loading, setLoading] = useState(false);
+    const [actioningId, setActioningId] = useState(null);
     const [error, setError] = useState('');
 
     useEffect(() => {
@@ -57,6 +58,44 @@ const Notifications = () => {
         }
     };
 
+    const handleOpenRestockBill = async (notification) => {
+        setActioningId(notification.id);
+        setError('');
+        try {
+            const res = await shopService.applyRestockBill();
+            const summary = res.data?.bill?.summary || {};
+            const totalLowStock = Number(summary.item_count || 0);
+            const matchedCount = Number(summary.matched_count || res.data?.applied_count || 0);
+            const unmatchedCount = Number(summary.unmatched_count || 0);
+
+            if (!matchedCount) {
+                if (totalLowStock > 0) {
+                    setError(`You have ${totalLowStock} low-stock pantry item${totalLowStock === 1 ? '' : 's'}, but none currently have matching in-stock shop products.`);
+                } else {
+                    setError('No matching shop items are available for this restock bill yet.');
+                }
+                return;
+            }
+
+            if (!notification.is_read) {
+                await accountService.markNotificationRead(notification.id);
+                setNotifications((prev) =>
+                    prev.map((item) => (
+                        item.id === notification.id ? { ...item, is_read: true } : item
+                    ))
+                );
+            }
+
+            navigate(
+                `${notification.data?.route || '/customer/cart?source=restock'}&low_stock=${totalLowStock}&matched=${matchedCount}&unmatched=${unmatchedCount}`
+            );
+        } catch (err) {
+            setError('Failed to open the restock bill.');
+        } finally {
+            setActioningId(null);
+        }
+    };
+
     const unreadCount = notifications.filter((n) => !n.is_read).length;
 
     return (
@@ -95,6 +134,15 @@ const Notifications = () => {
                                 <div style={styles.itemMeta}>{new Date(n.created_at).toLocaleString()}</div>
                             </div>
                             <div style={styles.itemActions}>
+                                {n.data?.action === 'restock_bill' && (
+                                    <button
+                                        style={styles.itemSecondaryBtn}
+                                        onClick={() => handleOpenRestockBill(n)}
+                                        disabled={actioningId === n.id}
+                                    >
+                                        {actioningId === n.id ? 'Preparing bill...' : 'Open restock bill'}
+                                    </button>
+                                )}
                                 {n.data?.receipt && n.data?.order_id && (
                                     <button style={styles.itemSecondaryBtn} onClick={() => handleDownloadReceipt(n.data.order_id)}>
                                         Download receipt

@@ -12,6 +12,8 @@ from rest_framework import status
 from .models import Ingredient, PantryItem, InventoryItem
 from .serializers import PantryItemSerializer
 from .serializers import InventoryItemSerializer
+from .expiry_alerts import sync_expiry_notifications_for_user
+from .low_stock import sync_low_stock_notifications_for_user
 from .ml.recommender import recommender
 from .ml.hero_ingredient_pipeline import is_basic_spice
 from nutrition.calculator import calculate_nutrition
@@ -134,6 +136,7 @@ def add_pantry_item(request):
     ingredient_id = request.data.get("ingredient")
     quantity_raw = request.data.get("quantity")
     expiry_date = request.data.get("expiry_date")
+    low_stock_limit_raw = request.data.get("low_stock_limit")
 
     if not ingredient_id:
         return Response({"error": "ingredient is required"}, status=status.HTTP_400_BAD_REQUEST)
@@ -149,20 +152,35 @@ def add_pantry_item(request):
     if not expiry_date:
         expiry_date = None
 
+    if low_stock_limit_raw in {"", None}:
+        low_stock_limit = None
+    else:
+        try:
+            low_stock_limit = float(low_stock_limit_raw)
+        except (TypeError, ValueError):
+            return Response({"error": "low_stock_limit must be a number"}, status=status.HTTP_400_BAD_REQUEST)
+        if low_stock_limit <= 0:
+            return Response({"error": "low_stock_limit must be greater than 0"}, status=status.HTTP_400_BAD_REQUEST)
+
     pantry_item, created = PantryItem.objects.get_or_create(
         user=request.user,
         ingredient_id=ingredient_id,
         defaults={
             "quantity": quantity,
-            "expiry_date": expiry_date
+            "expiry_date": expiry_date,
+            "low_stock_limit": low_stock_limit,
         }
     )
 
     if not created:
         pantry_item.quantity += quantity
         pantry_item.expiry_date = expiry_date
+        if low_stock_limit is not None:
+            pantry_item.low_stock_limit = low_stock_limit
         pantry_item.save()
 
+    sync_expiry_notifications_for_user(request.user)
+    sync_low_stock_notifications_for_user(request.user)
     return Response({"message": "Pantry updated successfully"})
 
 
@@ -170,6 +188,8 @@ def add_pantry_item(request):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def get_pantry_items(request):
+    sync_expiry_notifications_for_user(request.user)
+    sync_low_stock_notifications_for_user(request.user)
     items = PantryItem.objects.filter(user=request.user)
     serializer = PantryItemSerializer(items, many=True)
     return Response(serializer.data)
@@ -185,6 +205,7 @@ def update_pantry_item(request, pk):
 
     qty_raw = request.data.get("quantity", item.quantity)
     expiry_date = request.data.get("expiry_date", item.expiry_date)
+    low_stock_limit_raw = request.data.get("low_stock_limit", item.low_stock_limit)
 
     try:
         qty = float(qty_raw)
@@ -194,9 +215,22 @@ def update_pantry_item(request, pk):
     if qty <= 0:
         return Response({"error": "quantity must be greater than 0"}, status=400)
 
+    if low_stock_limit_raw in {"", None}:
+        low_stock_limit = None
+    else:
+        try:
+            low_stock_limit = float(low_stock_limit_raw)
+        except (TypeError, ValueError):
+            return Response({"error": "low_stock_limit must be a number"}, status=400)
+        if low_stock_limit <= 0:
+            return Response({"error": "low_stock_limit must be greater than 0"}, status=400)
+
     item.quantity = qty
     item.expiry_date = expiry_date
-    item.save(update_fields=["quantity", "expiry_date"])
+    item.low_stock_limit = low_stock_limit
+    item.save(update_fields=["quantity", "expiry_date", "low_stock_limit"])
+    sync_expiry_notifications_for_user(request.user)
+    sync_low_stock_notifications_for_user(request.user)
     return Response(PantryItemSerializer(item).data)
 
 
@@ -1045,6 +1079,8 @@ def cook_recipe(request):
 
         PantryItem.objects.filter(user=request.user, quantity__lte=0.0001).delete()
 
+    sync_expiry_notifications_for_user(request.user)
+    sync_low_stock_notifications_for_user(request.user)
     nutrition_totals = calculate_nutrition(parsed_ingredients)
     cook_nutrition_insights = build_recipe_nutrition_insights(nutrition_totals)
     nutrition_scoring = None

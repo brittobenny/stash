@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Plus, Trash2, Edit, UploadCloud } from 'lucide-react';
 import { shopOwnerService, pantryService } from '../services/api';
+import { formatCurrency } from '../utils/currency';
 import '../styles/global.css';
 
 const defaultForm = {
@@ -360,7 +361,7 @@ const ShopOwnerProducts = () => {
                                     </td>
                                     <td style={styles.td}>{p.category_name || '--'}</td>
                                     <td style={styles.td}>{p.stock_quantity}</td>
-                                    <td style={styles.td}>${Number(p.price).toFixed(2)}</td>
+                                    <td style={styles.td}>{formatCurrency(p.price)}</td>
                                     <td style={styles.td}>{p.pack_size} {p.pack_unit}</td>
                                     <td style={styles.td}>
                                         {Number(p.stock_quantity || 0) <= Number(p.low_stock_threshold || 0)

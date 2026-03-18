@@ -14,6 +14,7 @@ from shop.models import Order
 
 class RegisterView(APIView):
     permission_classes = [AllowAny]
+    authentication_classes = []
     
     def post(self, request):
         try:
@@ -36,6 +37,7 @@ class RegisterView(APIView):
 
 class LoginView(APIView):
     permission_classes = [AllowAny]
+    authentication_classes = []
     
     def post(self, request):
         email = request.data.get('email')
@@ -153,6 +155,14 @@ class NotificationListView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
+        try:
+            from inventory.expiry_alerts import sync_expiry_notifications_for_user
+            from inventory.low_stock import sync_low_stock_notifications_for_user
+
+            sync_expiry_notifications_for_user(request.user)
+            sync_low_stock_notifications_for_user(request.user)
+        except Exception:
+            pass
         qs = Notification.objects.filter(user=request.user).order_by("-created_at")
         if request.query_params.get("unread") == "true":
             qs = qs.filter(is_read=False)

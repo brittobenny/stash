@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { PackageCheck, RefreshCcw } from 'lucide-react';
 import { adminService } from '../services/api';
+import { formatCurrency } from '../utils/currency';
 import '../styles/global.css';
 import '../styles/admin.css';
 
@@ -77,7 +78,7 @@ const AdminOrders = () => {
               <tr key={o.id}>
                 <td>#{o.id}</td>
                 <td>{o.user_email || '--'}</td>
-                <td>${Number(o.total_amount || 0).toFixed(2)}</td>
+                <td>{formatCurrency(o.total_amount)}</td>
                 <td>
                   <span className={`admin-status ${o.status === 'CANCELLED' || o.status === 'REFUNDED' ? 'admin-status-bad' : 'admin-status-ok'}`}>
                     {o.status}

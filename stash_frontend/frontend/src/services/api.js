@@ -7,11 +7,15 @@ const api = axios.create({
     },
 });
 
+const PUBLIC_AUTH_PATHS = ['/accounts/login/', '/accounts/register/'];
+
 // Add a request interceptor to inject the token
 api.interceptors.request.use(
     (config) => {
+        const requestUrl = config.url || '';
+        const isPublicAuthRequest = PUBLIC_AUTH_PATHS.some((path) => requestUrl.startsWith(path));
         const token = sessionStorage.getItem('token');
-        if (token) {
+        if (token && !isPublicAuthRequest) {
             config.headers.Authorization = `Token ${token}`;
         }
         if (config.data instanceof FormData) {
@@ -145,6 +149,8 @@ export const recipeService = {
 
 export const shopService = {
     getProducts: () => api.get('/shop/products/'),
+    getRestockBill: () => api.get('/shop/restock-bill/'),
+    applyRestockBill: () => api.post('/shop/restock-bill/apply/'),
     addToCart: (productId, quantity) => api.post('/shop/cart/add/', { product_id: productId, quantity }),
     updateCartItem: (itemId, quantity) => api.post(`/shop/cart/item/${itemId}/`, { quantity }),
     getCart: () => api.get('/shop/cart/'),
