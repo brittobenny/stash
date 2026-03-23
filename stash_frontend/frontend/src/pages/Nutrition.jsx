@@ -17,8 +17,27 @@ import {
 } from 'lucide-react';
 import { nutritionService } from '../services/api';
 import '../styles/global.css';
+import '../styles/nutritionFloating.css';
 
 const RANGE_OPTIONS = [7, 14, 30];
+const FLOATING_FOODS = [
+  { icon: '🥑', top: '6%', left: '4%', size: 96, duration: '21s', delay: '-2s', rotate: '-12deg' },
+  { icon: '🍎', top: '10%', left: '24%', size: 74, duration: '19s', delay: '-6s', rotate: '9deg' },
+  { icon: '🥕', top: '13%', left: '47%', size: 104, duration: '24s', delay: '-4s', rotate: '-18deg' },
+  { icon: '🍋', top: '8%', left: '72%', size: 82, duration: '20s', delay: '-9s', rotate: '12deg' },
+  { icon: '🥦', top: '17%', left: '90%', size: 108, duration: '26s', delay: '-3s', rotate: '-10deg' },
+  { icon: '🍓', top: '34%', left: '10%', size: 76, duration: '18s', delay: '-8s', rotate: '8deg' },
+  { icon: '🥬', top: '38%', left: '32%', size: 102, duration: '25s', delay: '-11s', rotate: '-16deg' },
+  { icon: '🫐', top: '44%', left: '54%', size: 70, duration: '19s', delay: '-5s', rotate: '10deg' },
+  { icon: '🍅', top: '36%', left: '77%', size: 92, duration: '22s', delay: '-13s', rotate: '-7deg' },
+  { icon: '🥒', top: '52%', left: '92%', size: 88, duration: '21s', delay: '-1s', rotate: '15deg' },
+  { icon: '🍇', top: '60%', left: '6%', size: 84, duration: '20s', delay: '-10s', rotate: '-6deg' },
+  { icon: '🥭', top: '68%', left: '23%', size: 94, duration: '23s', delay: '-7s', rotate: '11deg' },
+  { icon: '🥝', top: '73%', left: '43%', size: 78, duration: '18s', delay: '-12s', rotate: '-9deg' },
+  { icon: '🌽', top: '79%', left: '63%', size: 100, duration: '24s', delay: '-15s', rotate: '7deg' },
+  { icon: '🍊', top: '83%', left: '82%', size: 86, duration: '22s', delay: '-14s', rotate: '-13deg' },
+  { icon: '🥗', top: '88%', left: '95%', size: 92, duration: '25s', delay: '-16s', rotate: '6deg' },
+];
 
 const safeNum = (v, d = 0) => {
   const n = Number(v);
@@ -223,6 +242,24 @@ const Nutrition = () => {
     <div style={styles.page}>
       <div style={styles.pageGlowA} />
       <div style={styles.pageGlowB} />
+      <div className="nutrition-float-layer" aria-hidden="true">
+        {FLOATING_FOODS.map((item, index) => (
+          <div
+            key={`${item.icon}-${index}`}
+            className="nutrition-float-item"
+            style={{
+              '--top': item.top,
+              '--left': item.left,
+              '--size': `${item.size}px`,
+              '--duration': item.duration,
+              '--delay': item.delay,
+              '--rotate': item.rotate,
+            }}
+          >
+            <span>{item.icon}</span>
+          </div>
+        ))}
+      </div>
       <div style={styles.pageShell}>
         <div style={styles.headerRow}>
           <div>
@@ -577,13 +614,15 @@ const Nutrition = () => {
 
 const styles = {
   page: {
-    width: '100%',
+    width: '100vw',
     minHeight: '100vh',
-    maxWidth: '1540px',
-    margin: '0 auto',
-    padding: '1.35rem',
+    maxWidth: 'none',
+    marginLeft: 'calc(50% - 50vw)',
+    marginRight: 'calc(50% - 50vw)',
+    padding: '1.35rem 1.5rem',
     position: 'relative',
     background: 'var(--gradient-primary)',
+    overflow: 'hidden',
   },
   pageGlowA: {
     position: 'absolute',
@@ -610,18 +649,24 @@ const styles = {
   pageShell: {
     position: 'relative',
     zIndex: 1,
+    isolation: 'isolate',
+    maxWidth: '1540px',
+    margin: '0 auto',
     display: 'flex',
     flexDirection: 'column',
     gap: '1.1rem',
     padding: '1.55rem',
     borderRadius: 34,
     border: '1px solid var(--color-border)',
-    background: 'linear-gradient(180deg, rgba(255,255,255,0.96), rgba(247,247,247,0.99))',
+    background: 'linear-gradient(180deg, rgba(255,255,255,0.9), rgba(247,247,247,0.94))',
     boxShadow: 'var(--shadow-lg), inset 0 1px 0 rgba(255,255,255,0.92)',
     backdropFilter: 'blur(18px)',
+    overflow: 'hidden',
   },
 
   headerRow: {
+    position: 'relative',
+    zIndex: 1,
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
@@ -632,7 +677,6 @@ const styles = {
     background: 'linear-gradient(180deg, rgba(255,255,255,0.98), rgba(247,247,247,0.99))',
     padding: '1.7rem 1.9rem',
     boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.95), var(--shadow-sm)',
-    position: 'relative',
     overflow: 'hidden',
   },
   pageTitle: {
@@ -801,6 +845,8 @@ const styles = {
   },
 
   contentShell: {
+    position: 'relative',
+    zIndex: 1,
     display: 'flex',
     flexDirection: 'column',
     gap: '1.25rem',

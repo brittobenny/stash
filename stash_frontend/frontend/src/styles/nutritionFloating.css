@@ -1,0 +1,72 @@
+.nutrition-float-layer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.nutrition-float-item {
+  position: absolute;
+  top: var(--top);
+  left: var(--left);
+  width: var(--size);
+  height: var(--size);
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: radial-gradient(circle at 35% 35%, rgba(255, 255, 255, 0.34), rgba(255, 255, 255, 0.08) 68%, transparent 78%);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow: 0 16px 36px rgba(120, 137, 171, 0.08);
+  backdrop-filter: blur(7px);
+  -webkit-backdrop-filter: blur(7px);
+  opacity: 0.28;
+  filter: blur(0.2px);
+  animation: nutritionFloatDrift var(--duration) ease-in-out infinite;
+  animation-delay: var(--delay);
+}
+
+.nutrition-float-item span {
+  display: inline-block;
+  font-size: calc(var(--size) * 0.5);
+  line-height: 1;
+  transform: rotate(var(--rotate));
+  filter: saturate(0.92) drop-shadow(0 10px 16px rgba(255, 255, 255, 0.28));
+  opacity: 0.88;
+  animation: nutritionFloatSpin calc(var(--duration) * 0.7) ease-in-out infinite alternate;
+}
+
+@keyframes nutritionFloatDrift {
+  0% {
+    transform: translate3d(0, 0, 0) scale(0.92);
+  }
+  30% {
+    transform: translate3d(18px, -22px, 0) scale(0.98);
+  }
+  65% {
+    transform: translate3d(-14px, -44px, 0) scale(1.03);
+  }
+  100% {
+    transform: translate3d(20px, -68px, 0) scale(0.96);
+  }
+}
+
+@keyframes nutritionFloatSpin {
+  0% {
+    transform: rotate(var(--rotate)) translateY(0);
+  }
+  100% {
+    transform: rotate(calc(var(--rotate) + 8deg)) translateY(-4px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nutrition-float-layer {
+    display: none;
+  }
+
+  .nutrition-float-item,
+  .nutrition-float-item span {
+    animation: none;
+  }
+}

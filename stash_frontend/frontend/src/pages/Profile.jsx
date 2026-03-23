@@ -90,7 +90,7 @@ const Profile = () => {
                         image: safeImage,
                     })
                 );
-            } catch (err) {
+            } catch {
                 const storedUser = sessionStorage.getItem('user');
                 if (storedUser) {
                     const parsed = JSON.parse(storedUser);
@@ -161,7 +161,7 @@ const Profile = () => {
                     .sort((a, b) => Number(b.quantity || 0) - Number(a.quantity || 0))
                     .slice(0, 6);
                 setUsage(usageList);
-            } catch (err) {
+            } catch {
                 setMetrics((prev) => ({ ...prev }));
             }
         };
@@ -173,7 +173,7 @@ const Profile = () => {
             try {
                 const res = await accountService.getNotifications();
                 setNotifications(res.data || []);
-            } catch (err) {
+            } catch {
                 setNotifications([]);
             }
         };
@@ -194,7 +194,7 @@ const Profile = () => {
         let shouldAlert = false;
         try {
             await accountService.updateProfile({ ...profileForm, image: profileImageFile });
-        } catch (err) {
+        } catch {
             shouldAlert = true;
         } finally {
             try {
@@ -231,7 +231,7 @@ const Profile = () => {
                 setProfileImageFile(null);
                 setShowProfileEditor(false);
                 shouldAlert = false;
-            } catch (refreshErr) {
+            } catch {
                 if (shouldAlert) {
                     alert('Failed to update profile');
                 }
