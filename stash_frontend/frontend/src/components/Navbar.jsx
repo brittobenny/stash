@@ -8,9 +8,22 @@ import '../styles/global.css';
 const Navbar = () => {
     const navigate = useNavigate();
     const location = useLocation();
-    const [role, setRole] = useState(null);
-    const [profileImage, setProfileImage] = useState(null);
     const [unreadCount, setUnreadCount] = useState(0);
+    const role = sessionStorage.getItem('role');
+    let profileImage = null;
+
+    try {
+        const rawUser = sessionStorage.getItem('user');
+        if (rawUser) {
+            const parsed = JSON.parse(rawUser);
+            const img = normalizeImagePath(parsed?.image);
+            if (img) {
+                profileImage = img.startsWith('http') ? img : `http://127.0.0.1:8000${img}`;
+            }
+        }
+    } catch {
+        profileImage = null;
+    }
 
     const isActive = (path) => (
         location.pathname === path ||
@@ -19,26 +32,7 @@ const Navbar = () => {
 
     useEffect(() => {
         // Simple check on mount and location change
-        const r = sessionStorage.getItem('role');
-        setRole(r);
-        try {
-            const rawUser = sessionStorage.getItem('user');
-            if (rawUser) {
-                const parsed = JSON.parse(rawUser);
-                const img = normalizeImagePath(parsed?.image);
-                if (img) {
-                    setProfileImage(img.startsWith('http') ? img : `http://127.0.0.1:8000${img}`);
-                } else {
-                    setProfileImage(null);
-                }
-            } else {
-                setProfileImage(null);
-            }
-        } catch (err) {
-            setProfileImage(null);
-        }
-
-        if (r === 'customer') {
+        if (role === 'customer') {
             accountService.getNotifications()
                 .then((res) => {
                     const data = res.data || [];
@@ -51,7 +45,7 @@ const Navbar = () => {
         } else {
             setUnreadCount(0);
         }
-    }, [location]);
+    }, [location, role]);
 
     const handleLogout = () => {
         sessionStorage.removeItem('token');
@@ -70,10 +64,10 @@ const Navbar = () => {
                 <ul style={styles.links}>
                     {role === 'customer' && (
                         <>
-                            <li><Link to="/customer/home" style={{ ...styles.link, ...(isActive('/customer/home') ? styles.linkActive : {}) }}>Home</Link></li>
                             <li><Link to="/customer/inventory" style={{ ...styles.link, ...(isActive('/customer/inventory') ? styles.linkActive : {}) }}>Inventory</Link></li>
                             <li><Link to="/customer/cook" style={{ ...styles.link, ...(isActive('/customer/cook') ? styles.linkActive : {}) }}>Cook</Link></li>
                             <li><Link to="/customer/nutrition" style={{ ...styles.link, ...(isActive('/customer/nutrition') ? styles.linkActive : {}) }}>Nutrition</Link></li>
+                            <li><Link to="/customer/home" style={{ ...styles.link, ...(isActive('/customer/home') ? styles.linkActive : {}) }}>Blog</Link></li>
                             <li><Link to="/customer/shop" style={{ ...styles.link, ...(isActive('/customer/shop') ? styles.linkActive : {}) }}>Shop</Link></li>
                             <li><Link to="/customer/account" style={{ ...styles.link, ...(isActive('/customer/account') ? styles.linkActive : {}) }}>Account</Link></li>
                         </>
