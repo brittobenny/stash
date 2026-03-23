@@ -18,6 +18,10 @@ const Shop = () => {
     const [priceCap, setPriceCap] = useState(null);
     const [inStockOnly, setInStockOnly] = useState(true);
     const [sortBy, setSortBy] = useState('popular');
+    const [showRecommendations, setShowRecommendations] = useState(false);
+    const [restockBill, setRestockBill] = useState(null);
+    const [restockLoading, setRestockLoading] = useState(false);
+    const [restockError, setRestockError] = useState('');
 
     useEffect(() => {
         fetchProducts();
@@ -60,6 +64,55 @@ const Shop = () => {
             console.error('Failed to fetch cart', err);
         }
     };
+
+    const fetchRestockBill = async () => {
+        setRestockLoading(true);
+        setRestockError('');
+        try {
+            const res = await shopService.getRestockBill();
+            setRestockBill(res.data || null);
+        } catch (err) {
+            const message = err.response?.data?.error || 'Failed to load recommendations.';
+            setRestockError(message);
+            setRestockBill(null);
+        } finally {
+            setRestockLoading(false);
+        }
+    };
+
+    const handleViewRecommendations = () => {
+        if (!showRecommendations) {
+            setShowRecommendations(true);
+            if (!restockBill) {
+                fetchRestockBill();
+            }
+        } else {
+            setShowRecommendations(false);
+        }
+    };
+
+    const handleApplyRestock = async () => {
+        if (!profileComplete) {
+            alert('Please complete your profile (address & location) to apply recommendations.');
+            return;
+        }
+        try {
+            const res = await shopService.applyRestockBill();
+            const appliedCount = res.data?.applied_count || 0;
+            if (appliedCount === 0) {
+                alert('No recommended items could be added to cart yet.');
+                return;
+            }
+            window.location.href = '/customer/cart';
+        } catch (err) {
+            const message = err.response?.data?.error || 'Failed to apply recommendations.';
+            alert(message === 'profile_incomplete'
+                ? 'Please complete your profile (address & location) to apply recommendations.'
+                : message
+            );
+        }
+    };
+
 
     const addToCart = async (product) => {
         if (!profileComplete) {
@@ -104,10 +157,14 @@ const Shop = () => {
     }, [shopProducts]);
 
     useEffect(() => {
-        if (priceCap === null || priceCap > priceBounds.max) {
-            setPriceCap(priceBounds.max);
+        if (priceCap === null) return;
+        if (priceBounds.max === 0) {
+            setPriceCap(null);
+            return;
         }
-    }, [priceBounds.max, priceCap]);
+        if (priceCap > priceBounds.max) setPriceCap(priceBounds.max);
+        if (priceCap < priceBounds.min) setPriceCap(priceBounds.min);
+    }, [priceBounds.max, priceBounds.min, priceCap]);
 
     const visibleProducts = useMemo(() => {
         const term = search.toLowerCase().trim();
@@ -122,7 +179,7 @@ const Shop = () => {
                 productCategory.toLowerCase().includes(term)
             );
             const matchesCategory = selectedCategory === 'All' || productCategory.toLowerCase() === selectedCategory.toLowerCase();
-            const matchesPrice = !Number.isFinite(maxPrice) || price <= maxPrice;
+            const matchesPrice = priceCap === null || !Number.isFinite(maxPrice) || price <= maxPrice;
             const matchesStock = !inStockOnly || isInStock;
             return matchesSearch && matchesCategory && matchesPrice && matchesStock;
         });
@@ -162,6 +219,10 @@ const Shop = () => {
         return `http://127.0.0.1:8000${path}`;
     };
 
+    const goToOrdersForFeedback = () => {
+        window.location.href = '/customer/orders?feedback=1';
+    };
+
     return (
         <div className="shop-mall">
             <section className="shop-mall__topbar">
@@ -179,6 +240,9 @@ const Shop = () => {
                     <button className="shop-mall__cart-ghost" onClick={() => window.location.href = '/customer/orders'}>
                         Orders
                     </button>
+                    <button className="shop-mall__cart-ghost" onClick={goToOrdersForFeedback}>
+                        Feedback
+                    </button>
                 </div>
             </section>
 
@@ -195,7 +259,12 @@ const Shop = () => {
                     <p>Bundles updated daily for your location. Auto‑adds to pantry after delivery.</p>
                     <div className="shop-mall__banner-actions">
                         <button className="btn btn-primary">Explore bundles</button>
-                        <button className="shop-mall__ghost">View recommendations</button>
+                        <button className="shop-mall__ghost" onClick={handleViewRecommendations}>
+                            {showRecommendations ? 'Hide recommendations' : 'View recommendations'}
+                        </button>
+                        <button className="shop-mall__ghost" onClick={goToOrdersForFeedback}>
+                            Leave feedback
+                        </button>
                     </div>
                 </div>
                 <div className="shop-mall__banner-card">
@@ -252,7 +321,9 @@ const Shop = () => {
                             <span>{formatCurrency(priceCap ?? priceBounds.max)}</span>
                         </div>
                         <div className="shop-mall__range-caption">
-                            Showing items up to {formatCurrency(priceCap ?? priceBounds.max)}
+                            {priceCap === null
+                                ? 'Showing all prices'
+                                : `Showing items up to ${formatCurrency(priceCap)}`}
                         </div>
                     </div>
                     <div className="shop-mall__filter-group">
@@ -286,6 +357,75 @@ const Shop = () => {
                             <option value="name">Name: A to Z</option>
                         </select>
                     </div>
+
+                    {showRecommendations && (
+                        <div className="shop-mall__recommendations">
+                            <div className="shop-mall__recommendations-head">
+                                <div>
+                                    <h3>Low-stock recommendations</h3>
+                                    <p>Auto-generated from your pantry low-stock items.</p>
+                                </div>
+                                <button className="shop-mall__ghost" onClick={fetchRestockBill} disabled={restockLoading}>
+                                    {restockLoading ? 'Refreshing...' : 'Refresh list'}
+                                </button>
+                            </div>
+                            {restockError && <div className="shop-mall__error">{restockError}</div>}
+                            {restockLoading ? (
+                                <div className="shop-mall__loading">Preparing recommendations...</div>
+                            ) : restockBill?.items?.length ? (
+                                <>
+                                    <div className="shop-mall__recommendations-grid">
+                                        {restockBill.items.map((item) => (
+                                            <div key={item.ingredient_id} className="shop-mall__recommendation-card">
+                                                <div>
+                                                    <strong>{item.ingredient_name}</strong>
+                                                    <span className="shop-mall__muted">
+                                                        Current: {item.current_quantity} {item.unit}
+                                                    </span>
+                                                    <span className="shop-mall__muted">
+                                                        Low stock limit: {item.low_stock_limit} {item.unit}
+                                                    </span>
+                                                </div>
+                                                {item.matched ? (
+                                                    <div className="shop-mall__recommendation-product">
+                                                        <div>
+                                                            <span className="shop-mall__tag">Recommended</span>
+                                                            <p>{item.product_name}</p>
+                                                            <span className="shop-mall__muted">
+                                                                {item.pack_size} {item.pack_unit} pack
+                                                            </span>
+                                                        </div>
+                                                        <div className="shop-mall__recommendation-meta">
+                                                            <span>{formatCurrency(item.price)}</span>
+                                                            <span>
+                                                                Suggested: {item.suggested_quantity} pack{item.suggested_quantity > 1 ? 's' : ''}
+                                                            </span>
+                                                            <span className="shop-mall__total">
+                                                                {formatCurrency(item.estimated_total || 0)}
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    <div className="shop-mall__muted">
+                                                        No in-stock product match yet.
+                                                    </div>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <div className="shop-mall__recommendations-actions">
+                                        <button className="btn btn-primary" onClick={handleApplyRestock}>
+                                            Add recommended items to cart
+                                        </button>
+                                    </div>
+                                </>
+                            ) : (
+                                <div className="shop-mall__empty">
+                                    No low-stock ingredients found.
+                                </div>
+                            )}
+                        </div>
+                    )}
 
                     {loading ? (
                         <div className="shop-mall__loading">Loading products...</div>
@@ -335,6 +475,7 @@ const Shop = () => {
                     )}
                 </div>
             </section>
+
         </div>
     );
 };

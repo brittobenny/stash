@@ -4,10 +4,10 @@
   min-height: 100vh;
   padding: 2.2rem 2.4rem 3.4rem;
   background:
-    radial-gradient(circle at 12% 16%, rgba(255, 228, 216, 0.34), transparent 28%),
-    radial-gradient(circle at 78% 18%, rgba(238, 228, 210, 0.28), transparent 26%),
-    radial-gradient(circle at 48% 52%, rgba(255, 255, 255, 0.22), transparent 24%),
-    linear-gradient(180deg, #d9d1c7 0%, #c8beb3 20%, #b9aea2 44%, #b4a79a 100%);
+    radial-gradient(circle at 12% 16%, rgba(255, 235, 224, 0.26), transparent 30%),
+    radial-gradient(circle at 82% 18%, rgba(231, 240, 255, 0.28), transparent 30%),
+    radial-gradient(circle at 46% 58%, rgba(255, 255, 255, 0.5), transparent 30%),
+    linear-gradient(180deg, #ffffff 0%, #faf7f2 30%, #f6f3ee 100%);
   overflow: hidden;
 }
 
@@ -26,7 +26,7 @@
   height: 520px;
   top: -180px;
   left: -120px;
-  background: radial-gradient(circle, rgba(255, 243, 224, 0.56), rgba(255, 243, 224, 0.06) 62%, transparent 74%);
+  background: radial-gradient(circle, rgba(255, 241, 227, 0.42), rgba(255, 241, 227, 0.06) 62%, transparent 74%);
 }
 
 .profile-page::after {
@@ -34,7 +34,7 @@
   height: 440px;
   right: -140px;
   bottom: -160px;
-  background: radial-gradient(circle, rgba(20, 20, 20, 0.28), rgba(20, 20, 20, 0.02) 62%, transparent 74%);
+  background: radial-gradient(circle, rgba(255, 228, 216, 0.24), rgba(255, 228, 216, 0.04) 62%, transparent 74%);
 }
 
 .profile-loading {

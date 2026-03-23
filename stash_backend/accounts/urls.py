@@ -8,6 +8,7 @@ from .views import (
     AdminSummaryView,
     AdminUserListView,
     AdminUserUpdateView,
+    AdminCreateShopOwnerView,
 )
 
 urlpatterns = [
@@ -19,4 +20,5 @@ urlpatterns = [
     path('admin/summary/', AdminSummaryView.as_view(), name='admin_summary'),
     path('admin/users/', AdminUserListView.as_view(), name='admin_users'),
     path('admin/users/<int:user_id>/', AdminUserUpdateView.as_view(), name='admin_user_update'),
+    path('admin/shops/', AdminCreateShopOwnerView.as_view(), name='admin_create_shop'),
 ]

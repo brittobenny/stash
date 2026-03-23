@@ -79,7 +79,6 @@ const Navbar = () => {
                             <li><Link to="/shop-owner/products" style={{ ...styles.link, ...(isActive('/shop-owner/products') ? styles.linkActive : {}) }}>Products</Link></li>
                             <li><Link to="/shop-owner/orders" style={{ ...styles.link, ...(isActive('/shop-owner/orders') ? styles.linkActive : {}) }}>Orders</Link></li>
                             <li><Link to="/shop-owner/feedback" style={{ ...styles.link, ...(isActive('/shop-owner/feedback') ? styles.linkActive : {}) }}>Feedback</Link></li>
-                            <li><Link to="/shop-owner/settings" style={{ ...styles.link, ...(isActive('/shop-owner/settings') ? styles.linkActive : {}) }}>Settings</Link></li>
                         </>
                     )}
                     {role === 'admin' && (
@@ -88,6 +87,7 @@ const Navbar = () => {
                             <li><Link to="/admin/users" style={{ ...styles.link, ...(isActive('/admin/users') ? styles.linkActive : {}) }}>Users</Link></li>
                             <li><Link to="/admin/shops" style={{ ...styles.link, ...(isActive('/admin/shops') ? styles.linkActive : {}) }}>Shops</Link></li>
                             <li><Link to="/admin/posts" style={{ ...styles.link, ...(isActive('/admin/posts') ? styles.linkActive : {}) }}>Posts</Link></li>
+                            <li><Link to="/admin/products" style={{ ...styles.link, ...(isActive('/admin/products') ? styles.linkActive : {}) }}>Products</Link></li>
                             <li><Link to="/admin/orders" style={{ ...styles.link, ...(isActive('/admin/orders') ? styles.linkActive : {}) }}>Orders</Link></li>
                             <li><Link to="/admin/feedback" style={{ ...styles.link, ...(isActive('/admin/feedback') ? styles.linkActive : {}) }}>Feedback</Link></li>
                         </>

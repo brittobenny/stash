@@ -1071,34 +1071,61 @@ const styles = {
     categoryList: { display: 'flex', flexDirection: 'column', gap: '1.4rem' },
     categoryListGrid: { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '1rem', alignItems: 'start' },
     categoryItem: { display: 'grid', gridTemplateColumns: '72px 1fr', gap: '1rem', alignItems: 'center', paddingBottom: '1.2rem', borderBottom: '1px dashed var(--color-border)' },
-    categoryItemGrid: { display: 'grid', gridTemplateColumns: '52px 1fr', gap: '0.75rem', alignItems: 'start', padding: '0.8rem', border: '1px dashed rgba(194, 176, 144, 0.34)', borderRadius: '16px', background: 'rgba(255,255,255,0.78)', minWidth: 0 },
+    categoryItemGrid: {
+        display: 'grid',
+        gridTemplateColumns: '52px 1fr',
+        gap: '0.75rem',
+        alignItems: 'start',
+        padding: '0.8rem',
+        border: '1px dashed rgba(194, 176, 144, 0.34)',
+        borderRadius: '16px',
+        background: 'rgba(255,255,255,0.78)',
+        minWidth: 0,
+        overflow: 'hidden',
+        boxSizing: 'border-box'
+    },
     categoryIcon: { width: '64px', height: '64px', borderRadius: '50%', background: 'linear-gradient(180deg, #f5eee0, #fff)', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid rgba(198, 181, 150, 0.24)', overflow: 'hidden' },
     itemImg: { width: '100%', height: '100%', objectFit: 'cover', display: 'block' },
-    categoryInfo: { display: 'flex', flexDirection: 'column', gap: '0.4rem', minWidth: 0 },
+    categoryInfo: { display: 'flex', flexDirection: 'column', gap: '0.4rem', minWidth: 0, width: '100%' },
     categoryRow: { display: 'grid', gridTemplateColumns: '1fr auto', alignItems: 'center', gap: '0.8rem' },
-    categoryRowGrid: { display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '0.2rem' },
+    categoryRowGrid: { display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '0.2rem', minWidth: 0, width: '100%' },
     categoryName: { margin: 0, fontSize: '1.05rem', fontWeight: '600' },
-    categoryNameGrid: { margin: 0, fontSize: '0.95rem', fontWeight: '600', lineHeight: '1.2', wordBreak: 'break-word' },
+    categoryNameGrid: { margin: 0, fontSize: '0.95rem', fontWeight: '600', lineHeight: '1.2', wordBreak: 'break-word', maxWidth: '100%' },
     categoryQty: { color: '#9d2334', fontWeight: '700', fontSize: '0.95rem' },
     categoryQtyGrid: { color: '#9d2334', fontWeight: '700', fontSize: '0.85rem' },
     categoryMeta: { color: '#6c6156', fontSize: '0.85rem' },
     categoryMetaGrid: { color: '#6c6156', fontSize: '0.78rem' },
-    expiryAlertChip: { display: 'inline-flex', alignItems: 'center', width: 'fit-content', padding: '4px 10px', borderRadius: '999px', fontSize: '0.74rem', fontWeight: '700', letterSpacing: '0.01em' },
+    expiryAlertChip: {
+        display: 'inline-flex',
+        alignItems: 'center',
+        width: 'fit-content',
+        maxWidth: '100%',
+        padding: '4px 10px',
+        borderRadius: '999px',
+        fontSize: '0.74rem',
+        fontWeight: '700',
+        letterSpacing: '0.01em',
+        whiteSpace: 'normal'
+    },
     expiryAlertWarning: { background: 'rgba(245, 158, 11, 0.14)', color: '#b45309', border: '1px solid rgba(245, 158, 11, 0.24)' },
     expiryAlertExpired: { background: 'rgba(239, 68, 68, 0.12)', color: '#dc2626', border: '1px solid rgba(239, 68, 68, 0.24)' },
     lowStockChip: { background: 'rgba(194, 38, 60, 0.08)', color: '#9d2334', border: '1px solid rgba(194, 38, 60, 0.16)' },
     batchList: { display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.5rem' },
     
     // Batch Card Styles
-    batchCard: { 
-        display: 'flex', 
-        flexDirection: 'column', 
-        gap: '0.5rem', 
-        padding: '0.6rem 0.8rem', 
-        borderRadius: '10px', 
-        border: '1px solid rgba(194, 176, 144, 0.22)', 
+    batchCard: {
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '0.5rem',
+        padding: '0.6rem 0.8rem',
+        borderRadius: '10px',
+        border: '1px solid rgba(194, 176, 144, 0.22)',
         background: 'rgba(255,255,255,0.9)',
-        transition: 'all 0.15s ease'
+        transition: 'all 0.15s ease',
+        minWidth: 0,
+        overflow: 'hidden',
+        width: '100%',
+        boxSizing: 'border-box'
     },
     batchCardExpired: {
         border: '1px solid rgba(220, 38, 38, 0.3)',
@@ -1109,16 +1136,18 @@ const styles = {
         background: 'rgba(255, 251, 235, 0.9)'
     },
     batchHeader: {
-        display: 'flex',
-        justifyContent: 'space-between',
+        display: 'grid',
+        gridTemplateColumns: '1fr auto',
         alignItems: 'center',
-        gap: '0.4rem'
+        columnGap: '0.6rem',
+        rowGap: '0.4rem'
     },
     batchInfo: {
         display: 'flex',
         alignItems: 'center',
         gap: '0.5rem',
-        flexWrap: 'wrap'
+        flexWrap: 'wrap',
+        minWidth: 0
     },
     batchNumber: {
         fontSize: '0.7rem',
@@ -1140,7 +1169,8 @@ const styles = {
         borderRadius: '999px',
         fontSize: '0.68rem',
         fontWeight: '600',
-        whiteSpace: 'nowrap'
+        whiteSpace: 'normal',
+        maxWidth: '100%'
     },
     batchStatusWarning: {
         background: 'rgba(245, 158, 11, 0.12)',
@@ -1155,32 +1185,39 @@ const styles = {
     batchControlsRow: {
         display: 'flex',
         justifyContent: 'space-between',
-        alignItems: 'center',
-        gap: '0.6rem'
+        alignItems: 'flex-start',
+        gap: '0.6rem',
+        flexWrap: 'wrap',
+        rowGap: '0.5rem'
     },
     batchControlGroup: {
         display: 'flex',
-        alignItems: 'center',
-        gap: '0.4rem'
+        flexDirection: 'column',
+        alignItems: 'flex-start',
+        gap: '0.25rem',
+        minWidth: 0,
+        flex: '1 1 120px'
     },
     batchControlLabel: {
         fontSize: '0.7rem',
         fontWeight: '500',
         color: '#8a7a6a'
     },
-    batchDateInput: { 
-        padding: '5px 8px', 
-        borderRadius: '6px', 
-        border: '1px solid rgba(193, 173, 139, 0.25)', 
-        background: 'rgba(255,255,255,0.95)', 
-        color: '#2d221c', 
+    batchDateInput: {
+        padding: '5px 8px',
+        borderRadius: '6px',
+        border: '1px solid rgba(193, 173, 139, 0.25)',
+        background: 'rgba(255,255,255,0.95)',
+        color: '#2d221c',
         fontSize: '0.78rem',
-        width: '130px'
+        width: '100%',
+        maxWidth: '140px'
     },
     batchQtyControls: {
         display: 'flex',
         alignItems: 'center',
-        gap: '0.25rem'
+        gap: '0.25rem',
+        flexShrink: 0
     },
     qtyBtn: { 
         width: '24px', 
@@ -1205,7 +1242,9 @@ const styles = {
     batchActions: {
         display: 'flex',
         alignItems: 'center',
-        gap: '0.3rem'
+        justifyContent: 'flex-end',
+        gap: '0.3rem',
+        flexShrink: 0
     },
     saveBatchBtn: { 
         background: 'linear-gradient(135deg, #16a34a, #15803d)', 

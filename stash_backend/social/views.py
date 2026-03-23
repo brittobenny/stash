@@ -1,5 +1,8 @@
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
+from datetime import timedelta
+from django.db.models import Count
+from django.db.models.functions import TruncDate
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
@@ -166,3 +169,42 @@ class ReviewQueueView(APIView):
             qs = qs.filter(status=status_filter)
         serializer = RecipePostSerializer(qs, many=True, context={"request": request})
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class EngagementAnalyticsView(APIView):
+    permission_classes = [IsAuthenticated, IsAdmin]
+
+    def get(self, request):
+        try:
+            days = max(1, min(30, int(request.query_params.get("days", 14))))
+        except Exception:
+            days = 14
+
+        today = timezone.localdate()
+        start_date = today - timedelta(days=days - 1)
+
+        likes_qs = RecipeLike.objects.filter(created_at__date__gte=start_date).annotate(
+            day=TruncDate("created_at")
+        ).values("day").annotate(count=Count("id"))
+        comments_qs = RecipeComment.objects.filter(created_at__date__gte=start_date).annotate(
+            day=TruncDate("created_at")
+        ).values("day").annotate(count=Count("id"))
+
+        likes_map = {row["day"]: row["count"] for row in likes_qs}
+        comments_map = {row["day"]: row["count"] for row in comments_qs}
+
+        labels = []
+        likes = []
+        comments = []
+        for i in range(days):
+            day = start_date + timedelta(days=i)
+            labels.append(day.isoformat())
+            likes.append(int(likes_map.get(day, 0)))
+            comments.append(int(comments_map.get(day, 0)))
+
+        return Response({
+            "days": days,
+            "labels": labels,
+            "likes": likes,
+            "comments": comments,
+        }, status=status.HTTP_200_OK)

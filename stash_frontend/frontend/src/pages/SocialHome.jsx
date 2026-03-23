@@ -373,21 +373,7 @@ const SocialHome = () => {
                             </div>
                         )}
                     </div>
-                    <div className="card insight-card soft">
-                        <h3>Top creators</h3>
-                        <div className="follow-list">
-                            {['Judy Nguyen', 'Amanda Reed', 'Billy Vasquez', 'Lori Ferguson'].map((name) => (
-                                <div key={name} className="follow-item">
-                                    <div className="avatar-fallback">{name[0]}</div>
-                                    <div>
-                                        <strong>{name}</strong>
-                                        <span>Stash chef</span>
-                                    </div>
-                                    <button>+</button>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
+                    {/* Top creators section removed per request */}
                 </aside>
             </div>
 

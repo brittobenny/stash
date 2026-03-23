@@ -8,9 +8,11 @@ from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.parsers import MultiPartParser, FormParser
 from django.contrib.auth import authenticate
+from django.contrib.auth.models import User
 from rest_framework.authtoken.models import Token
 from .serializers import RegisterSerializer, ProfileSerializer, NotificationSerializer
 from .models import UserProfile, Notification
+from shop.models import ShopProfile
 from shop.permissions import IsAdmin
 from shop.models import Order
 
@@ -253,6 +255,9 @@ class AdminUserListView(APIView):
         data = []
         for profile in qs:
             user = profile.user
+            shop_profile = None
+            if profile.role == "shopowner":
+                shop_profile = ShopProfile.objects.filter(owner=user).first()
             data.append({
                 "id": user.id,
                 "email": user.email,
@@ -260,9 +265,14 @@ class AdminUserListView(APIView):
                 "role": profile.role,
                 "mobile_number": profile.mobile_number,
                 "location": profile.location,
+                "address": profile.address,
+                "store_name": shop_profile.store_name if shop_profile else "",
                 "is_active": user.is_active,
                 "is_staff": user.is_staff,
                 "is_superuser": user.is_superuser,
+                "date_joined": user.date_joined.isoformat() if user.date_joined else None,
+                "last_login": user.last_login.isoformat() if user.last_login else None,
+                "profile_completed": bool(profile.address and profile.location),
             })
         return Response(data, status=status.HTTP_200_OK)
 
@@ -301,7 +311,66 @@ class AdminUserUpdateView(APIView):
             "role": profile.role,
             "mobile_number": profile.mobile_number,
             "location": profile.location,
+            "address": profile.address,
             "is_active": user.is_active,
             "is_staff": user.is_staff,
             "is_superuser": user.is_superuser,
+            "date_joined": user.date_joined.isoformat() if user.date_joined else None,
+            "last_login": user.last_login.isoformat() if user.last_login else None,
+            "profile_completed": bool(profile.address and profile.location),
         }, status=status.HTTP_200_OK)
+
+
+class AdminCreateShopOwnerView(APIView):
+    permission_classes = [IsAdmin]
+
+    def post(self, request):
+        name = (request.data.get("name") or "").strip()
+        email = (request.data.get("email") or "").strip().lower()
+        password = (request.data.get("password") or "").strip()
+        mobile_number = (request.data.get("mobile_number") or "").strip()
+        location = (request.data.get("location") or "").strip()
+        address = (request.data.get("address") or "").strip()
+        store_name = (request.data.get("store_name") or name or "New Shop").strip()
+
+        if not email or not password:
+            return Response({"error": "Email and password are required."}, status=status.HTTP_400_BAD_REQUEST)
+        if User.objects.filter(username=email).exists():
+            return Response({"error": "User already exists."}, status=status.HTTP_400_BAD_REQUEST)
+
+        user = User.objects.create_user(
+            username=email,
+            email=email,
+            password=password,
+            first_name=name or email.split("@")[0]
+        )
+        user.is_staff = True
+        user.save(update_fields=["is_staff"])
+
+        profile = UserProfile.objects.create(
+            user=user,
+            role="shopowner",
+            mobile_number=mobile_number,
+            location=location,
+            address=address,
+        )
+
+        ShopProfile.objects.create(
+            owner=user,
+            store_name=store_name,
+            address=address,
+            location=location,
+            phone=mobile_number,
+        )
+
+        return Response({
+            "id": user.id,
+            "email": user.email,
+            "name": user.first_name,
+            "role": profile.role,
+            "mobile_number": profile.mobile_number,
+            "location": profile.location,
+            "address": profile.address,
+            "store_name": store_name,
+            "is_active": user.is_active,
+        }, status=status.HTTP_201_CREATED)

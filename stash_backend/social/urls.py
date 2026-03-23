@@ -9,6 +9,7 @@ from .views import (
     ApprovePostView,
     RejectPostView,
     ReviewQueueView,
+    EngagementAnalyticsView,
 )
 
 urlpatterns = [
@@ -21,4 +22,5 @@ urlpatterns = [
     path("posts/<int:post_id>/approve/", ApprovePostView.as_view(), name="social-approve"),
     path("posts/<int:post_id>/reject/", RejectPostView.as_view(), name="social-reject"),
     path("review/", ReviewQueueView.as_view(), name="social-review"),
+    path("analytics/engagement/", EngagementAnalyticsView.as_view(), name="social-engagement"),
 ]

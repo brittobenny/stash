@@ -175,6 +175,7 @@ export const shopService = {
     cancelOrder: (orderId) => api.post(`/shop/orders/${orderId}/cancel/`),
     confirmAddToPantry: (orderId, addToPantry = true) =>
         api.post(`/shop/orders/${orderId}/confirm-pantry/`, { add_to_pantry: addToPantry }),
+    createFeedback: (payload) => api.post('/shop/feedback/', payload),
 };
 
 export const shopOwnerService = {
@@ -227,6 +228,7 @@ export const adminService = {
     getSummary: () => api.get('/accounts/admin/summary/'),
     listUsers: () => api.get('/accounts/admin/users/'),
     updateUser: (id, payload) => api.patch(`/accounts/admin/users/${id}/`, payload),
+    createShopOwner: (payload) => api.post('/accounts/admin/shops/', payload),
     listShops: () => api.get('/accounts/admin/users/?role=shopowner'),
     listOrders: (params = {}) => api.get('/shop/admin/orders/', { params }),
     getOrderDetail: (id) => api.get(`/shop/admin/orders/${id}/`),
@@ -238,6 +240,7 @@ export const socialService = {
     getFeed: (params = {}) => api.get('/social/feed/', { params }),
     getMyPosts: () => api.get('/social/mine/'),
     getPost: (postId) => api.get(`/social/posts/${postId}/`),
+    getEngagementAnalytics: (params = {}) => api.get('/social/analytics/engagement/', { params }),
     createPost: (payload) => {
         const formData = new FormData();
         if (payload && typeof payload === 'object') {
