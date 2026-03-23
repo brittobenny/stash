@@ -60,6 +60,23 @@ class PantryItem(models.Model):
         return f"{self.user} - {self.ingredient.name}"
 
 
+class PantryItemBatch(models.Model):
+    pantry_item = models.ForeignKey(PantryItem, on_delete=models.CASCADE, related_name="batches")
+    quantity = models.FloatField()
+    expiry_date = models.DateField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["pantry_item", "expiry_date"]),
+        ]
+
+    def __str__(self):
+        expiry_text = self.expiry_date.isoformat() if self.expiry_date else "no-expiry"
+        return f"{self.pantry_item} [{expiry_text}]"
+
+
 class InventoryItem(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     ingredient = models.ForeignKey(Ingredient, on_delete=models.CASCADE)

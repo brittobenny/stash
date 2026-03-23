@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { ShoppingCart, Plus, Search, SlidersHorizontal, BadgePercent } from 'lucide-react';
 import { shopService, accountService } from '../services/api';
@@ -14,6 +14,10 @@ const Shop = () => {
     const [search, setSearch] = useState('');
     const [profileComplete, setProfileComplete] = useState(true);
     const [userLocation, setUserLocation] = useState('');
+    const [selectedCategory, setSelectedCategory] = useState('All');
+    const [priceCap, setPriceCap] = useState(null);
+    const [inStockOnly, setInStockOnly] = useState(true);
+    const [sortBy, setSortBy] = useState('popular');
 
     useEffect(() => {
         fetchProducts();
@@ -31,7 +35,7 @@ const Shop = () => {
             const res = await accountService.getProfile();
             setProfileComplete(Boolean(res.data?.profile_completed));
             setUserLocation(String(res.data?.location || '').trim());
-        } catch (err) {
+        } catch {
             setProfileComplete(true);
         }
     };
@@ -73,26 +77,75 @@ const Shop = () => {
 
     const getCartCount = () => cart.reduce((total, item) => total + item.quantity, 0);
 
-    const filteredProducts = shopProducts.filter((product) => {
-        const term = search.toLowerCase();
-        if (!term) return true;
-        return (
-            String(product.name || '').toLowerCase().includes(term) ||
-            String(product.ingredient_name || '').toLowerCase().includes(term) ||
-            String(product.category_name || '').toLowerCase().includes(term)
-        );
-    });
+    const categoryOptions = useMemo(() => {
+        const seen = new Set();
+        const categories = shopProducts
+            .map((product) => String(product.category_name || product.category || '').trim())
+            .filter((name) => {
+                const key = name.toLowerCase();
+                if (!name || seen.has(key)) return false;
+                seen.add(key);
+                return true;
+            })
+            .sort((a, b) => a.localeCompare(b));
+        return ['All', ...categories];
+    }, [shopProducts]);
 
-    const sortedProducts = [...filteredProducts].sort((a, b) => {
-        if (!userLocation) return 0;
-        const aLoc = String(a.owner_location || '').toLowerCase();
-        const bLoc = String(b.owner_location || '').toLowerCase();
-        const target = userLocation.toLowerCase();
-        const aMatch = aLoc && aLoc.includes(target);
-        const bMatch = bLoc && bLoc.includes(target);
-        if (aMatch === bMatch) return 0;
-        return aMatch ? -1 : 1;
-    });
+    const priceBounds = useMemo(() => {
+        if (!shopProducts.length) return { min: 0, max: 0 };
+        const prices = shopProducts
+            .map((product) => Number(product.price || 0))
+            .filter((price) => Number.isFinite(price));
+        if (!prices.length) return { min: 0, max: 0 };
+        return {
+            min: Math.floor(Math.min(...prices)),
+            max: Math.ceil(Math.max(...prices)),
+        };
+    }, [shopProducts]);
+
+    useEffect(() => {
+        if (priceCap === null || priceCap > priceBounds.max) {
+            setPriceCap(priceBounds.max);
+        }
+    }, [priceBounds.max, priceCap]);
+
+    const visibleProducts = useMemo(() => {
+        const term = search.toLowerCase().trim();
+        const maxPrice = priceCap ?? priceBounds.max;
+        const filtered = shopProducts.filter((product) => {
+            const productCategory = String(product.category_name || product.category || '').trim();
+            const price = Number(product.price || 0);
+            const isInStock = Number(product.stock_quantity || 0) > 0;
+            const matchesSearch = !term || (
+                String(product.name || '').toLowerCase().includes(term) ||
+                String(product.ingredient_name || '').toLowerCase().includes(term) ||
+                productCategory.toLowerCase().includes(term)
+            );
+            const matchesCategory = selectedCategory === 'All' || productCategory.toLowerCase() === selectedCategory.toLowerCase();
+            const matchesPrice = !Number.isFinite(maxPrice) || price <= maxPrice;
+            const matchesStock = !inStockOnly || isInStock;
+            return matchesSearch && matchesCategory && matchesPrice && matchesStock;
+        });
+
+        filtered.sort((a, b) => {
+            if (userLocation) {
+                const target = userLocation.toLowerCase();
+                const aMatch = String(a.owner_location || '').toLowerCase().includes(target);
+                const bMatch = String(b.owner_location || '').toLowerCase().includes(target);
+                if (aMatch !== bMatch) {
+                    return aMatch ? -1 : 1;
+                }
+            }
+
+            if (sortBy === 'price_low') return Number(a.price || 0) - Number(b.price || 0);
+            if (sortBy === 'price_high') return Number(b.price || 0) - Number(a.price || 0);
+            if (sortBy === 'name') return String(a.name || '').localeCompare(String(b.name || ''));
+
+            return Number(b.stock_quantity || 0) - Number(a.stock_quantity || 0);
+        });
+
+        return filtered;
+    }, [inStockOnly, priceBounds.max, priceCap, search, selectedCategory, shopProducts, sortBy, userLocation]);
 
     const resolveProductImage = (product) => {
         const raw = String(product?.image || '').trim();
@@ -169,25 +222,43 @@ const Shop = () => {
                     <div className="shop-mall__filter-group">
                         <h4>Category</h4>
                         <div className="shop-mall__chips">
-                            <button className="shop-mall__chip active">All</button>
-                            <button className="shop-mall__chip">Vegetables</button>
-                            <button className="shop-mall__chip">Grains</button>
-                            <button className="shop-mall__chip">Dairy</button>
-                            <button className="shop-mall__chip">Spices</button>
+                            {categoryOptions.map((category) => (
+                                <button
+                                    key={category}
+                                    type="button"
+                                    className={`shop-mall__chip${selectedCategory === category ? ' active' : ''}`}
+                                    onClick={() => setSelectedCategory(category)}
+                                >
+                                    {category}
+                                </button>
+                            ))}
                         </div>
                     </div>
                     <div className="shop-mall__filter-group">
                         <h4>Price Range</h4>
                         <div className="shop-mall__range">
-                            <span>$10</span>
-                            <div className="shop-mall__range-bar" />
-                            <span>$120</span>
+                            <span>{formatCurrency(priceBounds.min)}</span>
+                            <input
+                                type="range"
+                                min={priceBounds.min}
+                                max={priceBounds.max || 0}
+                                step="1"
+                                value={priceCap ?? priceBounds.max}
+                                onChange={(e) => setPriceCap(Number(e.target.value))}
+                                className="shop-mall__range-input"
+                                aria-label="Maximum price"
+                                disabled={priceBounds.max <= priceBounds.min}
+                            />
+                            <span>{formatCurrency(priceCap ?? priceBounds.max)}</span>
+                        </div>
+                        <div className="shop-mall__range-caption">
+                            Showing items up to {formatCurrency(priceCap ?? priceBounds.max)}
                         </div>
                     </div>
                     <div className="shop-mall__filter-group">
                         <h4>Availability</h4>
                         <label className="shop-mall__toggle">
-                            <input type="checkbox" defaultChecked />
+                            <input type="checkbox" checked={inStockOnly} onChange={(e) => setInStockOnly(e.target.checked)} />
                             <span>In stock only</span>
                         </label>
                     </div>
@@ -208,10 +279,11 @@ const Shop = () => {
                                 onChange={(e) => setSearch(e.target.value)}
                             />
                         </div>
-                        <select className="shop-mall__sort">
-                            <option>Sort: Popular</option>
-                            <option>Price: Low to High</option>
-                            <option>Price: High to Low</option>
+                        <select className="shop-mall__sort" value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
+                            <option value="popular">Sort: Popular</option>
+                            <option value="price_low">Price: Low to High</option>
+                            <option value="price_high">Price: High to Low</option>
+                            <option value="name">Name: A to Z</option>
                         </select>
                     </div>
 
@@ -219,10 +291,10 @@ const Shop = () => {
                         <div className="shop-mall__loading">Loading products...</div>
                     ) : (
                         <div className="shop-mall__grid">
-                            {filteredProducts.length === 0 ? (
+                            {visibleProducts.length === 0 ? (
                                 <p className="shop-mall__empty">No products available at the moment.</p>
                             ) : (
-                                sortedProducts.map((product, index) => (
+                                visibleProducts.map((product, index) => (
                                     <div key={product.id} className="shop-mall__card fade-up" style={{ animationDelay: `${index * 0.05}s` }}>
                                         <div className="shop-mall__card-img">
                                             <img

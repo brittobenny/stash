@@ -57,6 +57,30 @@ GOAL_TARGETS = {
     "vegetable_servings": 5.0,
 }
 
+MEAL_RANGES = {
+    "calories": (250.0, 700.0),
+    "protein": (18.0, 45.0),
+    "carbs": (20.0, 80.0),
+    "fats": (5.0, 28.0),
+    "vegetable_servings": (1.0, 3.0),
+}
+
+MEAL_WEIGHTS = {
+    "calories": 20.0,
+    "protein": 25.0,
+    "carbs": 15.0,
+    "fats": 15.0,
+    "vegetable_servings": 25.0,
+}
+
+MEAL_PENALTIES = {
+    "calories": {"low": 0.9, "high": 1.2},
+    "protein": {"low": 1.5, "high": 0.3},
+    "carbs": {"low": 0.5, "high": 0.9},
+    "fats": {"low": 0.3, "high": 1.2},
+    "vegetable_servings": {"low": 1.4, "high": 0.1},
+}
+
 RECIPE_BADGE_RULES = (
     ("High Protein", lambda t: _to_float(t.get("protein")) >= 25.0),
     ("Fiber Rich", lambda t: _to_float(t.get("vegetable_servings")) >= 2.0),
@@ -210,7 +234,7 @@ def build_recipe_nutrition_insights(totals: dict) -> dict:
         "fats": _to_float(totals.get("fats") if totals.get("fats") is not None else totals.get("fat")),
         "vegetable_servings": _to_float(totals.get("vegetable_servings")),
     }
-    score, balanced, _ = _compute_daily_score(normalized_totals)
+    score, balanced, _, _ = _compute_meal_quality(normalized_totals)
     progress = build_goal_progress(normalized_totals)
     suggestions = build_fix_my_plate_suggestions(normalized_totals, progress)
     badges = build_recipe_nutrition_badges(normalized_totals)
@@ -231,18 +255,42 @@ def build_weekly_trend_payload(user, end_day=None, days: int = 7) -> dict:
         date__range=(start_day, end_day),
     ).order_by("date")
 
-    points = [{"date": str(row.date), "score": int(row.score)} for row in points_qs]
-    if len(points) < 2:
-        return {"direction": "flat", "delta": 0, "points": points}
+    by_date = {row.date: int(row.score) for row in points_qs}
+    points = []
+    cursor = start_day
+    while cursor <= end_day:
+        score = by_date.get(cursor)
+        points.append(
+            {
+                "date": str(cursor),
+                "score": int(score or 0),
+                "tracked": score is not None,
+            }
+        )
+        cursor += timedelta(days=1)
 
-    delta = points[-1]["score"] - points[0]["score"]
+    tracked_points = [point for point in points if point["tracked"]]
+    if len(tracked_points) < 2:
+        return {
+            "direction": "flat",
+            "delta": 0,
+            "points": points,
+            "tracked_days": len(tracked_points),
+        }
+
+    delta = tracked_points[-1]["score"] - tracked_points[0]["score"]
     if delta > 3:
         direction = "up"
     elif delta < -3:
         direction = "down"
     else:
         direction = "flat"
-    return {"direction": direction, "delta": int(delta), "points": points}
+    return {
+        "direction": direction,
+        "delta": int(delta),
+        "points": points,
+        "tracked_days": len(tracked_points),
+    }
 
 
 def build_daily_comparison_payload(user, day) -> dict:
@@ -305,23 +353,21 @@ def _estimate_vegetable_servings(parsed_ingredients) -> float:
     return round(total_veg_grams / 80.0, 2)
 
 
-def _compute_daily_score(totals: dict):
+def _compute_meal_quality(totals: dict):
     breakdown = {}
     score = 0.0
-    in_range_count = 0
 
-    for metric, weight in METRIC_WEIGHTS.items():
-        low, high = DAILY_RANGES[metric]
+    for metric, weight in MEAL_WEIGHTS.items():
+        low, high = MEAL_RANGES[metric]
         ratio, in_range = _metric_ratio(
             _to_float(totals.get(metric)),
             low,
             high,
-            PENALTIES[metric]["low"],
-            PENALTIES[metric]["high"],
+            MEAL_PENALTIES[metric]["low"],
+            MEAL_PENALTIES[metric]["high"],
         )
         metric_points = weight * ratio
         score += metric_points
-        in_range_count += int(in_range)
         breakdown[metric] = {
             "value": round(_to_float(totals.get(metric)), 2),
             "range": {"min": low, "max": high},
@@ -329,34 +375,114 @@ def _compute_daily_score(totals: dict):
             "points": round(metric_points, 2),
         }
 
-    # Balance bonus if most nutrients are within range.
-    if in_range_count >= 4:
-        score += 5.0
+    calories = _to_float(totals.get("calories"))
+    protein = _to_float(totals.get("protein"))
+    carbs = _to_float(totals.get("carbs"))
+    fats = _to_float(totals.get("fats"))
+    vegetables = _to_float(totals.get("vegetable_servings"))
 
-    # Extra hard penalties for problematic patterns.
-    carbs_high = _to_float(totals.get("carbs")) > DAILY_RANGES["carbs"][1] * 1.2
-    fats_high = _to_float(totals.get("fats")) > DAILY_RANGES["fats"][1] * 1.2
-    protein_low = _to_float(totals.get("protein")) < DAILY_RANGES["protein"][0] * 0.8
-    vegetables_low = _to_float(totals.get("vegetable_servings")) < DAILY_RANGES["vegetable_servings"][0] * 0.8
+    balanced = (
+        250.0 <= calories <= 750.0
+        and protein >= 18.0
+        and 20.0 <= carbs <= 90.0
+        and 5.0 <= fats <= 30.0
+        and vegetables >= 1.0
+    )
 
-    if carbs_high:
-        score -= 5.0
-    if fats_high:
-        score -= 5.0
-    if protein_low:
-        score -= 8.0
-    if vegetables_low:
-        score -= 8.0
+    junk_flags = {
+        "very_high_calories": calories >= 800.0,
+        "high_fat": fats >= 30.0,
+        "high_carbs": carbs >= 95.0,
+        "low_protein": protein < 12.0,
+        "low_vegetables": vegetables < 0.5,
+    }
+    junk_signal_count = sum(int(flag) for flag in junk_flags.values())
+    junk = (
+        junk_signal_count >= 3
+        or (calories >= 700.0 and fats >= 28.0)
+        or (carbs >= 90.0 and protein < 12.0)
+    )
+
+    if balanced:
+        score += 10.0
+    score -= junk_signal_count * 6.0
+    if junk:
+        score -= 10.0
 
     final_score = int(round(_clamp(score, 0.0, 100.0)))
-    balanced = (in_range_count >= 4) and (final_score >= 70)
+    breakdown["meal_quality"] = {
+        "balanced": balanced,
+        "junk": junk,
+        "junk_signal_count": junk_signal_count,
+        "junk_flags": junk_flags,
+    }
+    return final_score, balanced, junk, breakdown
 
-    breakdown["balance"] = {
-        "in_range_count": in_range_count,
-        "carbs_high": carbs_high,
-        "fats_high": fats_high,
-        "protein_low": protein_low,
-        "vegetables_low": vegetables_low,
+
+def _compute_daily_score(totals: dict, meal_entries: list[dict] | None = None):
+    if meal_entries is None:
+        meal_score, balanced, junk, meal_breakdown = _compute_meal_quality(totals)
+        breakdown = {
+            "mode": "single_meal",
+            "meal_count": 1,
+            "balanced_ratio": 1.0 if balanced else 0.0,
+            "junk_ratio": 1.0 if junk else 0.0,
+            "average_meal_score": meal_score,
+            "meals": [meal_breakdown],
+        }
+        return meal_score, balanced and not junk, breakdown
+
+    if not meal_entries:
+        return 0, False, {
+            "mode": "daily_meal_quality",
+            "meal_count": 0,
+            "balanced_ratio": 0.0,
+            "junk_ratio": 0.0,
+            "average_meal_score": 0.0,
+            "meals": [],
+        }
+
+    meal_breakdowns = []
+    meal_scores = []
+    balanced_count = 0
+    junk_count = 0
+
+    for meal in meal_entries:
+        meal_score, balanced, junk, meal_breakdown = _compute_meal_quality(meal)
+        meal_scores.append(meal_score)
+        balanced_count += int(balanced)
+        junk_count += int(junk)
+        meal_breakdown["recipe_name"] = meal.get("recipe_name") or "Meal"
+        meal_breakdown["score"] = meal_score
+        meal_breakdowns.append(meal_breakdown)
+
+    meal_count = len(meal_scores)
+    average_meal_score = sum(meal_scores) / max(meal_count, 1)
+    balanced_ratio = balanced_count / max(meal_count, 1)
+    junk_ratio = junk_count / max(meal_count, 1)
+    consistency_bonus = 5.0 if balanced_ratio >= 0.6 and junk_count == 0 else 0.0
+
+    score = (average_meal_score * 0.7) + (balanced_ratio * 25.0) - (junk_ratio * 15.0) + consistency_bonus
+    final_score = int(round(_clamp(score, 0.0, 100.0)))
+    balanced = balanced_ratio >= 0.6 and junk_ratio <= 0.34 and final_score >= 70
+
+    breakdown = {
+        "mode": "daily_meal_quality",
+        "meal_count": meal_count,
+        "balanced_meals": balanced_count,
+        "junk_meals": junk_count,
+        "balanced_ratio": round(balanced_ratio, 2),
+        "junk_ratio": round(junk_ratio, 2),
+        "average_meal_score": round(average_meal_score, 2),
+        "consistency_bonus": consistency_bonus,
+        "meals": meal_breakdowns,
+        "totals": {
+            "calories": round(_to_float(totals.get("calories")), 2),
+            "protein": round(_to_float(totals.get("protein")), 2),
+            "carbs": round(_to_float(totals.get("carbs")), 2),
+            "fats": round(_to_float(totals.get("fats")), 2),
+            "vegetable_servings": round(_to_float(totals.get("vegetable_servings")), 2),
+        },
     }
     return final_score, balanced, breakdown
 
@@ -413,6 +539,8 @@ def _add_reward(user, event_type, title, description="", points=0, reference_dat
 
 
 def recompute_daily_score(user, day):
+    logs = list(CookedRecipeLog.objects.filter(user=user, cooked_at__date=day).order_by("cooked_at"))
+
     aggregates = CookedRecipeLog.objects.filter(user=user, cooked_at__date=day).aggregate(
         calories=Sum("calories"),
         protein=Sum("protein"),
@@ -427,7 +555,18 @@ def recompute_daily_score(user, day):
         "fats": _to_float(aggregates.get("fats")),
         "vegetable_servings": _to_float(aggregates.get("vegetable_servings")),
     }
-    score, balanced, breakdown = _compute_daily_score(totals)
+    meal_entries = [
+        {
+            "recipe_name": log.recipe_name,
+            "calories": _to_float(log.calories),
+            "protein": _to_float(log.protein),
+            "carbs": _to_float(log.carbs),
+            "fats": _to_float(log.fats),
+            "vegetable_servings": _to_float(log.vegetable_servings),
+        }
+        for log in logs
+    ]
+    score, balanced, breakdown = _compute_daily_score(totals, meal_entries=meal_entries)
 
     daily, _ = DailyNutritionScore.objects.update_or_create(
         user=user,

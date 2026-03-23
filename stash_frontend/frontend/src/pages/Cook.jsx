@@ -48,15 +48,20 @@ const Cook = () => {
     const [recsError, setRecsError] = useState('');
     const [pantryItems, setPantryItems] = useState([]);
     const [selectedIngredients, setSelectedIngredients] = useState([]);
+    const [selectedHeroIngredient, setSelectedHeroIngredient] = useState('');
     const [ingredientSearch, setIngredientSearch] = useState('');
     const [loadingPhaseIndex, setLoadingPhaseIndex] = useState(0);
     const [downloadingRecipeId, setDownloadingRecipeId] = useState(null);
 
-    const fetchRecommendations = async (selection = null) => {
+    const fetchRecommendations = async (selection = null, heroIngredient = selectedHeroIngredient) => {
         setRecsError('');
         setRecsLoading(true);
         try {
-            const res = await recipeService.getRecommendations(selection, { top_k: 10, min_match_percent: 25 });
+            const res = await recipeService.getRecommendations(selection, {
+                top_k: 10,
+                min_match_percent: 25,
+                hero_ingredient: heroIngredient,
+            });
             setRecommendations(res.data?.recommendations || []);
         } catch (err) {
             setRecsError('Unable to load recommendations. Try again.');
@@ -71,6 +76,7 @@ const Cook = () => {
             setRecommendations(cookPageMemory.recommendations || []);
             setPantryItems(cookPageMemory.pantryItems || []);
             setSelectedIngredients(cookPageMemory.selectedIngredients || []);
+            setSelectedHeroIngredient(cookPageMemory.selectedHeroIngredient || '');
             setIngredientSearch(cookPageMemory.ingredientSearch || '');
         }
 
@@ -102,9 +108,10 @@ const Cook = () => {
             recommendations,
             pantryItems,
             selectedIngredients,
+            selectedHeroIngredient,
             ingredientSearch,
         };
-    }, [cacheKey, recommendations, pantryItems, selectedIngredients, ingredientSearch]);
+    }, [cacheKey, recommendations, pantryItems, selectedIngredients, selectedHeroIngredient, ingredientSearch]);
 
     useEffect(() => {
         if (!recsLoading) {
@@ -127,9 +134,24 @@ const Cook = () => {
         if (!q) return availableNames;
         return availableNames.filter((name) => name.toLowerCase().includes(q));
     }, [availableNames, ingredientSearch]);
+    const selectedHeroOptions = useMemo(
+        () => [...selectedIngredients].sort((left, right) => left.localeCompare(right)),
+        [selectedIngredients]
+    );
 
     const selectedSet = useMemo(() => new Set(selectedIngredients), [selectedIngredients]);
     const pantryIsEmpty = availableNames.length === 0;
+
+    useEffect(() => {
+        if (selectedIngredients.length === 1) {
+            setSelectedHeroIngredient(selectedIngredients[0]);
+            return;
+        }
+
+        if (selectedHeroIngredient && !selectedIngredients.includes(selectedHeroIngredient)) {
+            setSelectedHeroIngredient('');
+        }
+    }, [selectedIngredients, selectedHeroIngredient]);
 
     const avgMatch = useMemo(() => {
         if (!recommendations.length) return 0;
@@ -150,8 +172,11 @@ const Cook = () => {
         if (selectedIngredients.length === 0) {
             return 'Select at least one ingredient and then click Get AI Recipes.';
         }
+        if (selectedHeroIngredient) {
+            return `No matching ${selectedHeroIngredient} recipes were found for the selected pantry items.`;
+        }
         return 'No matching recipes found for the selected ingredients.';
-    }, [availableNames.length, selectedIngredients.length]);
+    }, [availableNames.length, selectedIngredients.length, selectedHeroIngredient]);
 
     const toggleIngredient = (name) => {
         setSelectedIngredients((prev) =>
@@ -165,6 +190,11 @@ const Cook = () => {
 
     const handleClearAll = () => {
         setSelectedIngredients([]);
+        setSelectedHeroIngredient('');
+    };
+
+    const handleRunRecommendations = () => {
+        fetchRecommendations(selectedIngredients, selectedHeroIngredient);
     };
 
     const handleDownloadRecipe = async (recipeId) => {
@@ -265,7 +295,7 @@ const Cook = () => {
                             <button style={styles.softBtn} onClick={handleClearAll}>Clear</button>
                             <button
                                 style={styles.softBtn}
-                                onClick={() => fetchRecommendations(selectedIngredients)}
+                                onClick={handleRunRecommendations}
                                 disabled={recsLoading}
                             >
                                 <RefreshCw size={16} className={recsLoading ? 'spin' : ''} />
@@ -273,18 +303,49 @@ const Cook = () => {
                             </button>
                             <button
                                 style={styles.primaryBtn}
-                                onClick={() => fetchRecommendations(selectedIngredients)}
+                                onClick={handleRunRecommendations}
                                 disabled={recsLoading}
                             >
                                 <Sparkles size={16} />
-                                Get AI Recipes
+                                {selectedHeroIngredient ? `Get ${selectedHeroIngredient} Recipes` : 'Get AI Recipes'}
                             </button>
                         </div>
                     </div>
 
                     <div style={styles.selectionInfo}>
                         Selected {selectedIngredients.length} / {availableNames.length}
+                        {selectedHeroIngredient ? ` | Hero ingredient: ${selectedHeroIngredient}` : ' | Hero ingredient: auto (first selected item)'}
                     </div>
+
+                    {!pantryIsEmpty && selectedIngredients.length > 0 && (
+                        <div style={styles.heroChooser}>
+                            <div style={styles.heroChooserCopy}>
+                                <span style={styles.heroLabel}>What is your hero ingredient?</span>
+                                <span style={styles.heroHint}>
+                                    Pick the ingredient you want the recipe list to revolve around. We will rank the easiest dishes highest.
+                                </span>
+                            </div>
+                            <div style={styles.heroChipRow}>
+                                <button
+                                    type="button"
+                                    style={!selectedHeroIngredient ? { ...styles.heroChip, ...styles.heroChipActive } : styles.heroChip}
+                                    onClick={() => setSelectedHeroIngredient('')}
+                                >
+                                    Auto hero
+                                </button>
+                                {selectedHeroOptions.map((name) => (
+                                    <button
+                                        type="button"
+                                        key={name}
+                                        style={selectedHeroIngredient === name ? { ...styles.heroChip, ...styles.heroChipActive } : styles.heroChip}
+                                        onClick={() => setSelectedHeroIngredient(name)}
+                                    >
+                                        {name}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    )}
 
                     {pantryIsEmpty ? (
                         <div style={styles.selectorEmptyBar}>
@@ -467,6 +528,16 @@ const Cook = () => {
                                                 </div>
                                             )}
 
+                                            {recipe.selected_hero_ingredient && (
+                                                <div style={styles.heroExplain}>
+                                                    {recipe.supporting_hero_missing?.length > 0
+                                                        ? `Built around ${recipe.selected_hero_ingredient}. Missing key add-on: ${recipe.supporting_hero_missing.join(', ')}.`
+                                                        : recipe.supporting_hero_matches?.length > 0
+                                                            ? `Built around ${recipe.selected_hero_ingredient} with strong support from ${recipe.supporting_hero_matches.join(', ')}.`
+                                                            : `Built around ${recipe.selected_hero_ingredient}.`}
+                                                </div>
+                                            )}
+
                                             <div style={styles.progressTrack}>
                                                 <div
                                                     style={{
@@ -636,6 +707,52 @@ const styles = {
         boxShadow: '0 12px 24px rgba(159, 24, 21, 0.28)',
     },
     selectionInfo: { color: '#5f5449', fontSize: '0.9rem' },
+    heroChooser: {
+        borderRadius: '16px',
+        border: '1px solid rgba(181, 165, 141, 0.24)',
+        background: 'linear-gradient(180deg, rgba(255,255,255,0.86), rgba(247,241,233,0.92))',
+        padding: '0.8rem 0.9rem',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '0.65rem',
+    },
+    heroChooserCopy: {
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '0.18rem',
+    },
+    heroLabel: {
+        fontSize: '0.88rem',
+        fontWeight: 700,
+        color: '#2e241d',
+    },
+    heroHint: {
+        fontSize: '0.82rem',
+        color: '#695b4f',
+    },
+    heroChipRow: {
+        display: 'flex',
+        flexWrap: 'wrap',
+        gap: '0.55rem',
+    },
+    heroChip: {
+        borderRadius: '999px',
+        border: '1px solid rgba(177, 162, 138, 0.26)',
+        background: 'rgba(255,255,255,0.88)',
+        color: '#2d231d',
+        padding: '8px 13px',
+        fontSize: '0.84rem',
+        fontWeight: 600,
+        cursor: 'pointer',
+        transition: 'all 0.2s ease',
+        boxShadow: '0 8px 16px rgba(118, 102, 77, 0.06)',
+    },
+    heroChipActive: {
+        border: '1px solid rgba(188, 44, 42, 0.3)',
+        background: 'linear-gradient(135deg, rgba(250,223,218,0.98), rgba(247,236,231,0.94))',
+        color: '#a41b1a',
+        boxShadow: '0 10px 18px rgba(166, 34, 29, 0.14)',
+    },
     chipGrid: { display: 'flex', flexWrap: 'wrap', gap: '0.55rem', maxHeight: '170px', overflowY: 'auto', paddingRight: '2px' },
     chip: {
         borderRadius: '999px',
@@ -981,6 +1098,16 @@ const styles = {
         padding: '3px 8px',
         fontSize: '0.74rem',
         fontWeight: 700,
+    },
+    heroExplain: {
+        marginTop: '0.65rem',
+        color: '#6a4b40',
+        fontSize: '0.82rem',
+        lineHeight: 1.45,
+        background: 'rgba(173, 67, 47, 0.06)',
+        border: '1px solid rgba(173, 67, 47, 0.12)',
+        borderRadius: '12px',
+        padding: '0.55rem 0.65rem',
     },
     progressTrack: {
         marginTop: '0.75rem',

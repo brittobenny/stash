@@ -1,5 +1,7 @@
 from django.shortcuts import render
 from django.db import models
+from django.conf import settings
+from django.core.mail import send_mail
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
@@ -12,6 +14,35 @@ from .models import UserProfile, Notification
 from shop.permissions import IsAdmin
 from shop.models import Order
 
+
+def _send_welcome_email(user) -> None:
+    recipient = str(getattr(user, "email", "") or "").strip()
+    if not recipient:
+        return
+
+    display_name = str(getattr(user, "first_name", "") or "").strip() or "there"
+    message = "\n".join(
+        [
+            f"Hi {display_name},",
+            "",
+            "Welcome to Stash.",
+            "Your account is ready, and you can now explore recipes, track nutrition, and shop ingredients.",
+            "",
+            "If you did not create this account, please ignore this email.",
+        ]
+    )
+
+    try:
+        send_mail(
+            subject="Welcome to Stash",
+            message=message,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[recipient],
+            fail_silently=False,
+        )
+    except Exception as exc:
+        print(f"Welcome email failed for {recipient}: {exc}")
+
 class RegisterView(APIView):
     permission_classes = [AllowAny]
     authentication_classes = []
@@ -21,6 +52,7 @@ class RegisterView(APIView):
             serializer = RegisterSerializer(data=request.data)
             if serializer.is_valid():
                 user = serializer.save()
+                _send_welcome_email(user)
                 return Response({
                     "message": "User registered successfully",
                     "user": {

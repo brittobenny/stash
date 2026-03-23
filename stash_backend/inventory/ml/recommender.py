@@ -7,7 +7,7 @@ from nutrition.calculator import calculate_nutrition
 from nutrition.services import DAILY_RANGES
 from nutrition.services import build_recipe_nutrition_badges
 from inventory.substitutions import get_substitutions, normalize_name as normalize_sub_name
-from .hero_ingredient_pipeline import compute_strict_recipe_match
+from .hero_ingredient_pipeline import normalize_hero_ingredients, is_basic_spice
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -24,9 +24,9 @@ COMMON_DATASET_PATH = os.path.join(
 
 
 def _resolve_dataset_path():
-    if os.path.exists(COMMON_DATASET_PATH):
-        return COMMON_DATASET_PATH
-    return RAW_DATASET_PATH
+    if os.path.exists(RAW_DATASET_PATH):
+        return RAW_DATASET_PATH
+    return COMMON_DATASET_PATH
 
 class MealRecommender:
     """
@@ -400,8 +400,93 @@ class MealRecommender:
         self._embedding_lookup_cache = lookup
         return lookup
 
+    def _normalize_selected_hero(self, hero_ingredient):
+        normalized = normalize_hero_ingredients(hero_ingredient)
+        if normalized:
+            return normalized[0]
+        return self._canonical_name(hero_ingredient)
+
+    def _title_contains_token(self, title, token):
+        clean_title = re.sub(r"[^a-z ]", " ", str(title or "").lower())
+        clean_title = re.sub(r"\s+", " ", clean_title).strip()
+        canonical_title = self._canonical_name(clean_title) or clean_title
+        if not token or not canonical_title:
+            return False
+        return bool(re.search(rf"\b{re.escape(token)}\b", canonical_title))
+
+    def _calculate_recipe_score(self, recipe_ingredients, user_ingredients):
+        recipe_set = {
+            canonical
+            for item in recipe_ingredients or []
+            for canonical in [self._canonical_name(item)]
+            if canonical and not is_basic_spice(canonical)
+        }
+        user_set = {self._canonical_name(item) for item in user_ingredients or [] if self._canonical_name(item)}
+
+        if not recipe_set or not user_set:
+            return {
+                "score": 0.0,
+                "matched": [],
+                "missing": sorted(recipe_set),
+                "total": len(recipe_set),
+                "match_ratio": 0.0,
+                "missing_ratio": 0.0,
+                "user_coverage": 0.0,
+                "ease_score": 0.0,
+            }
+
+        matched = sorted(recipe_set & user_set)
+        missing = sorted(recipe_set - user_set)
+
+        total = len(recipe_set)
+        matched_count = len(matched)
+        missing_count = len(missing)
+
+        match_ratio = matched_count / total if total else 0.0
+        missing_ratio = missing_count / total if total else 0.0
+        ease_score = 1.0 / (1.0 + total)
+        user_coverage = matched_count / len(user_set) if user_set else 0.0
+
+        score = (
+            (0.65 * match_ratio)
+            + (0.25 * user_coverage)
+            + (0.10 * ease_score)
+            - (0.15 * missing_ratio)
+        )
+
+        return {
+            "score": round(max(score, 0.0), 6),
+            "matched": matched,
+            "missing": missing,
+            "total": total,
+            "match_ratio": round(match_ratio, 6),
+            "missing_ratio": round(missing_ratio, 6),
+            "user_coverage": round(user_coverage, 6),
+            "ease_score": round(ease_score, 6),
+        }
+
+    def _recipe_matches_selected_hero(self, row, selected_hero):
+        if not selected_hero:
+            return True
+
+        recipe_name = str(row.get("name", "") or "")
+        return self._title_contains_token(recipe_name, selected_hero)
+
+    def _compute_hero_presence_coverage(self, recipe_hero_names, pantry_names):
+        coverage = {}
+        if not recipe_hero_names:
+            return coverage
+
+        pantry_set = {self._canonical_name(item) for item in pantry_names or [] if self._canonical_name(item)}
+        for hero in recipe_hero_names:
+            canonical_hero = self._canonical_name(hero)
+            if not canonical_hero:
+                continue
+            coverage[canonical_hero] = canonical_hero in pantry_set
+        return coverage
+
     # ----------------------------------
-    def recommend(self, pantry_items, top_k=10, min_match_percent=25.0):
+    def recommend(self, pantry_items, top_k=10, min_match_percent=25.0, selected_hero_ingredient=None):
 
         if not self.loaded:
             self.load_data()
@@ -436,61 +521,85 @@ class MealRecommender:
             return []
 
         pantry_names = set(pantry_qty_lookup.keys())
+        pantry_name_list = list(pantry_qty_lookup.keys())
+        selected_hero = self._normalize_selected_hero(selected_hero_ingredient)
+        if not selected_hero and pantry_name_list:
+            selected_hero = pantry_name_list[0]
+        if selected_hero and selected_hero not in pantry_names:
+            return []
         candidates = []
         season = self._current_season()
-        pantry_name_list = list(pantry_qty_lookup.keys())
-        pantry_qty_list = [float(pantry_qty_lookup[name]) for name in pantry_name_list]
-        embedding_lookup = self._load_embedding_lookup()
-        pantry_embedding_lookup = {
-            name: embedding_lookup[name]
-            for name in pantry_name_list
-            if name in embedding_lookup
-        }
+        pantry_user_ingredients = list(pantry_qty_lookup.keys())
 
         for row_idx, row in self.recipes.iterrows():
-
             recipe_ing_names = row.get("ingredient_names", []) or []
-            recipe_quantities = row.get("ingredient_quantities", []) or []
             hero_ingredients = list(row.get("hero_ingredients", []) or [])
             hero_ingredient = row.get("hero_ingredient", "") or (hero_ingredients[0] if hero_ingredients else "")
             if not recipe_ing_names:
                 continue
 
-            recipe_embedding_lookup = {
-                ingredient: embedding_lookup[ingredient]
-                for ingredient in recipe_ing_names
-                if ingredient in embedding_lookup
-            }
-            match_result = compute_strict_recipe_match(
-                recipe_ingredients=recipe_ing_names,
-                recipe_quantities=recipe_quantities,
-                hero_ingredient=hero_ingredients or hero_ingredient,
-                pantry_ingredients=pantry_name_list,
-                pantry_quantities=pantry_qty_list,
-                recipe_embedding_lookup=recipe_embedding_lookup,
-                pantry_embedding_lookup=pantry_embedding_lookup,
-                threshold=0.80,
-                return_details=True,
-            )
-
-            status_value = match_result.get("status", "")
-            if status_value in {"NEEDS_KEY_INGREDIENT", "INSUFFICIENT_HERO_QUANTITY"}:
+            if not self._recipe_matches_selected_hero(row, selected_hero):
                 continue
 
-            available_names = set(match_result.get("matched_ingredients") or [])
+            score_result = self._calculate_recipe_score(
+                recipe_ingredients=recipe_ing_names,
+                user_ingredients=pantry_user_ingredients,
+            )
+            if score_result["score"] <= 0:
+                continue
+
+            available_names = set(score_result["matched"])
             if not available_names:
                 continue
 
-            missing_set = set(match_result.get("missing_ingredients") or [])
-            match_percent = float(match_result.get("score", 0.0) or 0.0)
+            missing_set = set(score_result["missing"])
+            raw_match_percent = float(score_result["score"] * 100.0)
+            primary_hero = self._canonical_name(hero_ingredient)
+            hero_focus_score = 1.0
+            if selected_hero and primary_hero and primary_hero != selected_hero:
+                hero_focus_score = 0.6
+
+            supporting_hero_ingredients = [hero for hero in hero_ingredients if hero != selected_hero]
+            hero_coverage = self._compute_hero_presence_coverage(
+                recipe_hero_names=supporting_hero_ingredients,
+                pantry_names=pantry_user_ingredients,
+            )
+            supporting_hero_matches = [hero for hero, has_match in hero_coverage.items() if has_match]
+            supporting_hero_missing = [hero for hero, has_match in hero_coverage.items() if not has_match]
+            if supporting_hero_ingredients:
+                supporting_hero_fit = len(supporting_hero_matches) / max(len(supporting_hero_ingredients), 1)
+                supporting_hero_penalty = 0.45 + (0.55 * supporting_hero_fit)
+            else:
+                supporting_hero_fit = 1.0
+                supporting_hero_penalty = 1.0
+
+            match_percent = raw_match_percent * hero_focus_score * supporting_hero_penalty
+
             candidates.append({
                 "row_idx": row_idx,
                 "available_names": sorted(list(available_names)),
                 "missing_set": missing_set,
-                "match_percent": match_percent,
+                "match_percent": round(match_percent, 2),
+                "raw_match_percent": round(raw_match_percent, 2),
+                "score": round(score_result["score"], 6),
+                "match_ratio": score_result["match_ratio"],
+                "missing_ratio": score_result["missing_ratio"],
+                "user_coverage": score_result["user_coverage"],
+                "ease_score": score_result["ease_score"],
                 "hero_ingredient": hero_ingredient,
                 "hero_ingredients": hero_ingredients or ([hero_ingredient] if hero_ingredient else []),
-                "match_status": status_value,
+                "match_status": (
+                    "COOK_NOW" if match_percent >= 70
+                    else "ALMOST_READY" if match_percent >= 40
+                    else "LOW_MATCH"
+                ),
+                "selected_hero_ingredient": selected_hero,
+                "supporting_hero_ingredients": supporting_hero_ingredients,
+                "supporting_hero_matches": supporting_hero_matches,
+                "supporting_hero_missing": supporting_hero_missing,
+                "supporting_hero_fit": round(supporting_hero_fit, 3),
+                "supporting_hero_match_count": len(supporting_hero_matches),
+                "hero_focus_score": round(hero_focus_score, 3),
             })
 
         if not candidates:
@@ -516,9 +625,16 @@ class MealRecommender:
             nutrition = calculate_nutrition(parsed_ingredients)
             nutrition_score = self._nutrition_score(nutrition)
             seasonal_hint = self._seasonal_hint(recipe_ing_names)
-            seasonal_bonus = 1.0 if seasonal_hint else 0.0
-            base_match = max(0.0, min(1.0, float(candidate["match_percent"]) / 100.0))
-            rank_score = (base_match * 0.6) + (nutrition_score * 0.25) + (seasonal_bonus * 0.15)
+            base_match = max(0.0, min(1.0, float(candidate.get("score", 0.0) or 0.0)))
+            supporting_heroes = candidate.get("supporting_hero_ingredients", [])
+            supporting_hero_matches = candidate.get("supporting_hero_matches", [])
+            supporting_hero_fit = float(candidate.get("supporting_hero_fit", 1.0) or 1.0)
+            hero_focus_score = float(candidate.get("hero_focus_score", 1.0) or 1.0)
+            rank_score = (
+                (base_match * 0.82)
+                + (supporting_hero_fit * 0.10)
+                + (hero_focus_score * 0.08)
+            )
 
             image_url = row.get("image_url")
             if image_url and image_url != image_url:
@@ -531,7 +647,9 @@ class MealRecommender:
                 "id": int(row["id"]),
                 "name": row["name"],
                 "match_percent": round(float(candidate["match_percent"]), 2),
+                "raw_match_percent": round(float(candidate.get("raw_match_percent", candidate["match_percent"])), 2),
                 "rank_score": round(rank_score, 4),
+                "generic_score": round(float(candidate.get("score", 0.0) or 0.0), 4),
                 "minutes": int(minutes),
                 "difficulty": difficulty,
                 "cuisine": row.get("cuisine", "General"),
@@ -539,6 +657,11 @@ class MealRecommender:
                 "steps": row["instructions"].split("."),
                 "hero_ingredient": candidate["hero_ingredient"],
                 "hero_ingredients": candidate.get("hero_ingredients", []),
+                "selected_hero_ingredient": candidate.get("selected_hero_ingredient", ""),
+                "supporting_hero_ingredients": candidate.get("supporting_hero_ingredients", []),
+                "supporting_hero_matches": candidate.get("supporting_hero_matches", []),
+                "supporting_hero_missing": candidate.get("supporting_hero_missing", []),
+                "supporting_hero_match_count": int(candidate.get("supporting_hero_match_count", 0) or 0),
                 "match_status": candidate["match_status"],
                 "used_ingredients": candidate["available_names"],
                 "missing_ingredients": sorted(list(missing_set)),
@@ -562,6 +685,7 @@ class MealRecommender:
         results.sort(
             key=lambda x: (
                 x.get("match_percent", 0),
+                x.get("supporting_hero_match_count", 0),
                 x.get("rank_score", 0),
                 -int(x.get("minutes", 0) or 0),
             ),
@@ -570,9 +694,15 @@ class MealRecommender:
 
         filtered = [r for r in results if float(r.get("match_percent", 0) or 0) >= float(min_match_percent)]
 
-        # Avoid empty lists for sparse pantries while still suppressing very low matches.
-        if len(filtered) < min(3, top_k):
-            filtered = [r for r in results if float(r.get("match_percent", 0) or 0) >= 15.0]
+        if len(filtered) < top_k:
+            existing_ids = {item.get("id") for item in filtered}
+            for recipe in results:
+                if recipe.get("id") in existing_ids:
+                    continue
+                filtered.append(recipe)
+                existing_ids.add(recipe.get("id"))
+                if len(filtered) >= top_k:
+                    break
 
         if not filtered:
             filtered = results

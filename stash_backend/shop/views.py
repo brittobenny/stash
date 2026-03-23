@@ -24,6 +24,7 @@ from .permissions import IsShopOwner, IsAdmin
 
 from inventory.models import PantryItem, Ingredient
 from inventory.low_stock import build_low_stock_snapshot, sync_low_stock_notifications_for_user
+from inventory.pantry_batches import add_pantry_stock
 
 
 # ----------------------------
@@ -824,9 +825,6 @@ def confirm_add_to_pantry(request, order_id):
         skipped = []
 
         if add_to_pantry:
-            pantry_rows = PantryItem.objects.select_for_update().select_related("ingredient").filter(user=request.user)
-            pantry_map = {p.ingredient_id: p for p in pantry_rows}
-
             order_items = OrderItem.objects.select_related("product", "product__ingredient").filter(order=order)
 
             for oi in order_items:
@@ -873,17 +871,12 @@ def confirm_add_to_pantry(request, order_id):
                     })
                     continue
 
-                existing = pantry_map.get(ing.id)
-                if existing:
-                    existing.quantity = float(existing.quantity or 0) + float(converted)
-                    existing.save(update_fields=["quantity"])
-                else:
-                    existing = PantryItem.objects.create(
-                        user=request.user,
-                        ingredient=ing,
-                        quantity=float(converted),
-                    )
-                    pantry_map[ing.id] = existing
+                add_pantry_stock(
+                    user=request.user,
+                    ingredient=ing,
+                    quantity=float(converted),
+                    expiry_date=None,
+                )
 
                 applied.append({"ingredient": ing.name, "added": converted, "unit": ing.default_unit})
 

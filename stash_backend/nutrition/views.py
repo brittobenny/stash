@@ -97,6 +97,7 @@ def profile_summary(request):
     week_start = today - timedelta(days=today.weekday())
 
     today_score = DailyNutritionScore.objects.filter(user=request.user, date=today).first()
+    active_score = today_score or DailyNutritionScore.objects.filter(user=request.user).order_by("-date").first()
     week_score = WeeklyNutritionScore.objects.filter(user=request.user, week_start=week_start).first()
     latest_reward = NutritionRewardEvent.objects.filter(user=request.user).order_by("-awarded_at").first()
 
@@ -119,8 +120,12 @@ def profile_summary(request):
 
     data.update(
         {
+            "has_today_data": bool(today_score),
             "today_score": today_score.score if today_score else 0,
             "today_balanced": today_score.balanced if today_score else False,
+            "active_score_date": str(active_score.date) if active_score else None,
+            "active_score": active_score.score if active_score else 0,
+            "active_balanced": active_score.balanced if active_score else False,
             "weekly_score": week_score.average_score if week_score else 0,
             "weekly_days_tracked": week_score.days_tracked if week_score else 0,
             "latest_reward": NutritionRewardEventSerializer(latest_reward).data if latest_reward else None,

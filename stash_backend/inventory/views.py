@@ -2,20 +2,23 @@ import csv
 import json
 import re
 import html
+from datetime import date
 from pathlib import Path
 
 from django.db import transaction, models
+from django.db.models import Prefetch
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from rest_framework import status
-from .models import Ingredient, PantryItem, InventoryItem
+from .models import Ingredient, PantryItem, PantryItemBatch, InventoryItem
 from .serializers import PantryItemSerializer
 from .serializers import InventoryItemSerializer
 from .expiry_alerts import sync_expiry_notifications_for_user
 from .low_stock import sync_low_stock_notifications_for_user
 from .ml.recommender import recommender
 from .ml.hero_ingredient_pipeline import is_basic_spice
+from .pantry_batches import add_pantry_stock, consume_pantry_quantity, ordered_pantry_batches_qs, refresh_pantry_item_from_batches, update_pantry_batch_record
 from nutrition.calculator import calculate_nutrition
 from nutrition.services import build_recipe_nutrition_insights
 from .substitutions import find_substitutable_ingredients, normalize_name as normalize_sub_name
@@ -119,6 +122,17 @@ def _load_master_ingredient_names() -> set[str]:
                 names.add(name)
     return names
 
+
+def _parse_optional_date(value, field_name: str = "expiry_date"):
+    if value in {"", None}:
+        return None
+    if isinstance(value, date):
+        return value
+    try:
+        return date.fromisoformat(str(value))
+    except (TypeError, ValueError):
+        raise ValueError(f"{field_name} must be in YYYY-MM-DD format")
+
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def list_ingredients(request):
@@ -149,8 +163,10 @@ def add_pantry_item(request):
     if quantity <= 0:
         return Response({"error": "quantity must be greater than 0"}, status=status.HTTP_400_BAD_REQUEST)
 
-    if not expiry_date:
-        expiry_date = None
+    try:
+        expiry_date = _parse_optional_date(expiry_date)
+    except ValueError as exc:
+        return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
     if low_stock_limit_raw in {"", None}:
         low_stock_limit = None
@@ -162,26 +178,23 @@ def add_pantry_item(request):
         if low_stock_limit <= 0:
             return Response({"error": "low_stock_limit must be greater than 0"}, status=status.HTTP_400_BAD_REQUEST)
 
-    pantry_item, created = PantryItem.objects.get_or_create(
-        user=request.user,
-        ingredient_id=ingredient_id,
-        defaults={
-            "quantity": quantity,
-            "expiry_date": expiry_date,
-            "low_stock_limit": low_stock_limit,
-        }
-    )
+    try:
+        ingredient = Ingredient.objects.get(id=ingredient_id)
+    except Ingredient.DoesNotExist:
+        return Response({"error": "Ingredient not found"}, status=status.HTTP_404_NOT_FOUND)
 
-    if not created:
-        pantry_item.quantity += quantity
-        pantry_item.expiry_date = expiry_date
-        if low_stock_limit is not None:
-            pantry_item.low_stock_limit = low_stock_limit
-        pantry_item.save()
+    pantry_item, _ = add_pantry_stock(
+        user=request.user,
+        ingredient=ingredient,
+        quantity=quantity,
+        expiry_date=expiry_date,
+        low_stock_limit=low_stock_limit,
+    )
 
     sync_expiry_notifications_for_user(request.user)
     sync_low_stock_notifications_for_user(request.user)
-    return Response({"message": "Pantry updated successfully"})
+    serializer = PantryItemSerializer(pantry_item)
+    return Response({"message": "Pantry updated successfully", "item": serializer.data})
 
 
 
@@ -190,7 +203,13 @@ def add_pantry_item(request):
 def get_pantry_items(request):
     sync_expiry_notifications_for_user(request.user)
     sync_low_stock_notifications_for_user(request.user)
-    items = PantryItem.objects.filter(user=request.user)
+    items = PantryItem.objects.filter(user=request.user).prefetch_related(
+        Prefetch(
+            "batches",
+            queryset=ordered_pantry_batches_qs(PantryItemBatch.objects.filter(quantity__gt=0)),
+            to_attr="prefetched_batches",
+        )
+    )
     serializer = PantryItemSerializer(items, many=True)
     return Response(serializer.data)
 
@@ -204,16 +223,8 @@ def update_pantry_item(request, pk):
         return Response({"error": "Item not found"}, status=404)
 
     qty_raw = request.data.get("quantity", item.quantity)
-    expiry_date = request.data.get("expiry_date", item.expiry_date)
+    expiry_raw = request.data.get("expiry_date", item.expiry_date)
     low_stock_limit_raw = request.data.get("low_stock_limit", item.low_stock_limit)
-
-    try:
-        qty = float(qty_raw)
-    except (TypeError, ValueError):
-        return Response({"error": "quantity must be a number"}, status=400)
-
-    if qty <= 0:
-        return Response({"error": "quantity must be greater than 0"}, status=400)
 
     if low_stock_limit_raw in {"", None}:
         low_stock_limit = None
@@ -225,13 +236,141 @@ def update_pantry_item(request, pk):
         if low_stock_limit <= 0:
             return Response({"error": "low_stock_limit must be greater than 0"}, status=400)
 
-    item.quantity = qty
-    item.expiry_date = expiry_date
+    batches = list(ordered_pantry_batches_qs(item.batches.filter(quantity__gt=0)))
+
+    if "quantity" in request.data or "expiry_date" in request.data:
+        try:
+            qty = float(qty_raw)
+        except (TypeError, ValueError):
+            return Response({"error": "quantity must be a number"}, status=400)
+
+        if qty <= 0:
+            return Response({"error": "quantity must be greater than 0"}, status=400)
+
+        try:
+            expiry_date = _parse_optional_date(expiry_raw)
+        except ValueError as exc:
+            return Response({"error": str(exc)}, status=400)
+
+        if len(batches) > 1:
+            return Response(
+                {
+                    "error": "This pantry item has multiple expiry-date batches. Update the individual batch instead."
+                },
+                status=400,
+            )
+
+        if batches:
+            item, _ = update_pantry_batch_record(
+                batches[0],
+                quantity=qty,
+                expiry_date=expiry_date,
+            )
+        else:
+            batch = PantryItemBatch.objects.create(
+                pantry_item=item,
+                quantity=qty,
+                expiry_date=expiry_date,
+            )
+            item = refresh_pantry_item_from_batches(batch.pantry_item)
+
     item.low_stock_limit = low_stock_limit
-    item.save(update_fields=["quantity", "expiry_date", "low_stock_limit"])
+    item.save(update_fields=["low_stock_limit"])
     sync_expiry_notifications_for_user(request.user)
     sync_low_stock_notifications_for_user(request.user)
-    return Response(PantryItemSerializer(item).data)
+    refreshed_item = PantryItem.objects.filter(pk=item.pk).prefetch_related(
+        Prefetch(
+            "batches",
+            queryset=ordered_pantry_batches_qs(PantryItemBatch.objects.filter(quantity__gt=0)),
+            to_attr="prefetched_batches",
+        )
+    ).first()
+    return Response(PantryItemSerializer(refreshed_item or item).data)
+
+
+@api_view(["PATCH"])
+@permission_classes([IsAuthenticated])
+def update_pantry_batch(request, pk):
+    try:
+        batch = PantryItemBatch.objects.select_related("pantry_item", "pantry_item__ingredient").get(
+            pk=pk,
+            pantry_item__user=request.user,
+        )
+    except PantryItemBatch.DoesNotExist:
+        return Response({"error": "Batch not found"}, status=404)
+
+    qty_raw = request.data.get("quantity", batch.quantity)
+    expiry_raw = request.data.get("expiry_date", batch.expiry_date)
+    low_stock_limit_raw = request.data.get("low_stock_limit", batch.pantry_item.low_stock_limit)
+
+    try:
+        qty = float(qty_raw)
+    except (TypeError, ValueError):
+        return Response({"error": "quantity must be a number"}, status=400)
+
+    if qty <= 0:
+        return Response({"error": "quantity must be greater than 0"}, status=400)
+
+    try:
+        expiry_date = _parse_optional_date(expiry_raw)
+    except ValueError as exc:
+        return Response({"error": str(exc)}, status=400)
+
+    if low_stock_limit_raw in {"", None}:
+        low_stock_limit = None
+    else:
+        try:
+            low_stock_limit = float(low_stock_limit_raw)
+        except (TypeError, ValueError):
+            return Response({"error": "low_stock_limit must be a number"}, status=400)
+        if low_stock_limit <= 0:
+            return Response({"error": "low_stock_limit must be greater than 0"}, status=400)
+
+    item, _ = update_pantry_batch_record(batch, quantity=qty, expiry_date=expiry_date)
+    if item is None:
+        return Response({"error": "Pantry item no longer exists"}, status=404)
+    item.low_stock_limit = low_stock_limit
+    item.save(update_fields=["low_stock_limit"])
+
+    sync_expiry_notifications_for_user(request.user)
+    sync_low_stock_notifications_for_user(request.user)
+
+    refreshed_item = PantryItem.objects.filter(pk=item.pk).prefetch_related(
+        Prefetch(
+            "batches",
+            queryset=ordered_pantry_batches_qs(PantryItemBatch.objects.filter(quantity__gt=0)),
+            to_attr="prefetched_batches",
+        )
+    ).first()
+    return Response(PantryItemSerializer(refreshed_item or item).data)
+
+
+@api_view(["DELETE"])
+@permission_classes([IsAuthenticated])
+def delete_pantry_batch(request, pk):
+    try:
+        batch = PantryItemBatch.objects.select_related("pantry_item").get(
+            pk=pk,
+            pantry_item__user=request.user,
+        )
+    except PantryItemBatch.DoesNotExist:
+        return Response({"error": "Batch not found"}, status=404)
+
+    item_id = batch.pantry_item_id
+    item = batch.pantry_item
+    batch.delete()
+    refreshed_item = refresh_pantry_item_from_batches(item)
+
+    sync_expiry_notifications_for_user(request.user)
+    sync_low_stock_notifications_for_user(request.user)
+
+    return Response(
+        {
+            "message": "Batch deleted",
+            "pantry_item_id": item_id,
+            "pantry_item_deleted": refreshed_item is None,
+        }
+    )
 
 
 @api_view(["POST"])
@@ -241,6 +380,11 @@ def add_to_inventory(request):
     quantity = request.data.get("quantity")
     unit = request.data.get("unit")
     expiry_date = request.data.get("expiry_date")
+
+    try:
+        expiry_date = _parse_optional_date(expiry_date)
+    except ValueError as exc:
+        return Response({"error": str(exc)}, status=400)
 
     try:
         ingredient = Ingredient.objects.get(id=ingredient_id)
@@ -310,6 +454,7 @@ def recommend_meals(request):
 
     if request.method == "POST":
         selected = request.data.get("ingredients") or []
+        selected_hero_ingredient = request.data.get("hero_ingredient")
         if isinstance(selected, str):
             selected = [s.strip() for s in selected.split(",")]
         pantry_payload = []
@@ -332,6 +477,7 @@ def recommend_meals(request):
             pantry_payload.append({"name": name, "quantity": max(quantity, 0.0)})
     else:
         pantry_payload = []
+        selected_hero_ingredient = request.query_params.get("hero_ingredient")
 
     if not pantry_payload:
         pantry_payload = [
@@ -368,6 +514,7 @@ def recommend_meals(request):
             pantry_payload,
             top_k=top_k,
             min_match_percent=min_match_percent,
+            selected_hero_ingredient=selected_hero_ingredient,
         )
     except Exception as exc:
         # Keep API resilient in production while surfacing the issue to logs.
@@ -384,6 +531,7 @@ def recommend_meals(request):
         "pantry_items": ingredients,
         "top_k": top_k,
         "min_match_percent": min_match_percent,
+        "selected_hero_ingredient": str(selected_hero_ingredient or "").strip().lower(),
         "recommendations": results
     })
 
@@ -1064,20 +1212,23 @@ def cook_recipe(request):
         for pantry_obj, use_amt in plan:
             if pantry_obj is None or use_amt <= 0:
                 continue
-            pantry_obj.quantity = float(pantry_obj.quantity) - float(use_amt)
-            pantry_obj.save(update_fields=["quantity"])
-            deducted.append({"ingredient": pantry_obj.ingredient.name, "used_g": float(use_amt)})
+            consumption = consume_pantry_quantity(pantry_obj, use_amt)
+            deducted.append(
+                {
+                    "ingredient": pantry_obj.ingredient.name,
+                    "used_g": float(consumption["consumed"]),
+                    "batch_deductions": consumption["details"],
+                }
+            )
 
             inv_item, _ = InventoryItem.objects.get_or_create(
                 user=request.user,
                 ingredient=pantry_obj.ingredient,
                 defaults={"quantity": 0, "unit": pantry_obj.ingredient.default_unit}
             )
-            inv_item.quantity = float(inv_item.quantity or 0) + float(use_amt)
+            inv_item.quantity = float(inv_item.quantity or 0) + float(consumption["consumed"])
             inv_item.unit = pantry_obj.ingredient.default_unit
             inv_item.save(update_fields=["quantity", "unit"])
-
-        PantryItem.objects.filter(user=request.user, quantity__lte=0.0001).delete()
 
     sync_expiry_notifications_for_user(request.user)
     sync_low_stock_notifications_for_user(request.user)

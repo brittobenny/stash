@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { RefreshCw, Archive, Search, Plus, X, Sparkles, Minus, Save, ShoppingCart } from 'lucide-react';
+import { RefreshCw, Archive, Search, Plus, X, Sparkles, Minus, Save, ShoppingCart, AlertTriangle, Trash2 } from 'lucide-react';
 import { pantryService, shopService } from '../services/api';
 import '../styles/global.css';
 
@@ -60,8 +60,13 @@ const Pantry = () => {
     const [newItem, setNewItem] = useState({ ingredient: '', quantity: '', expiry_date: '', low_stock_limit: '' });
     const [adding, setAdding] = useState(false);
     const [editQuantities, setEditQuantities] = useState({});
+    const [editBatchExpiries, setEditBatchExpiries] = useState({});
     const [savingItem, setSavingItem] = useState(null);
     const [restockLoading, setRestockLoading] = useState(false);
+
+    // Confirmation modal for expired batch deletion
+    const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+    const [pendingDeleteBatch, setPendingDeleteBatch] = useState(null);
 
     useEffect(() => {
         fetchPantry();
@@ -302,41 +307,119 @@ const Pantry = () => {
         ...dynamicCategories.sort(),
     ];
 
-    const handleAdjust = (item, delta) => {
-        const current = editQuantities[item.id] ?? item.quantity ?? 0;
+    const handleAdjustBatch = (batch, delta) => {
+        const current = editQuantities[batch.id] ?? batch.quantity ?? 0;
         const next = Math.max(0, Number(current) + delta);
         setEditQuantities((prev) => {
             const updated = { ...prev };
-            if (Number(next) === Number(item.quantity ?? 0)) {
-                delete updated[item.id];
+            if (Number(next) === Number(batch.quantity ?? 0)) {
+                delete updated[batch.id];
             } else {
-                updated[item.id] = next;
+                updated[batch.id] = next;
             }
             return updated;
         });
     };
 
-    const handleSaveQuantity = async (item) => {
-        const qty = editQuantities[item.id] ?? item.quantity;
+    const handleBatchExpiryChange = (batch, value) => {
+        setEditBatchExpiries((prev) => {
+            const updated = { ...prev };
+            if ((value || '') === (batch.expiry_date || '')) {
+                delete updated[batch.id];
+            } else {
+                updated[batch.id] = value;
+            }
+            return updated;
+        });
+    };
+
+    const hasBatchChanges = (batch) => {
+        const qty = editQuantities[batch.id];
+        const expiry = Object.prototype.hasOwnProperty.call(editBatchExpiries, batch.id)
+            ? editBatchExpiries[batch.id]
+            : batch.expiry_date || '';
+        return (
+            (qty !== undefined && Number(qty) !== Number(batch.quantity ?? 0)) ||
+            expiry !== (batch.expiry_date || '')
+        );
+    };
+
+    const handleDeleteBatch = async (batchId) => {
+        setSavingItem(batchId);
+        try {
+            await pantryService.deleteBatch(batchId);
+            await fetchPantry();
+            setEditQuantities((prev) => {
+                const updated = { ...prev };
+                delete updated[batchId];
+                return updated;
+            });
+            setEditBatchExpiries((prev) => {
+                const updated = { ...prev };
+                delete updated[batchId];
+                return updated;
+            });
+        } catch (err) {
+            const msg = err.response?.data?.error || 'Failed to delete batch';
+            alert(msg);
+        } finally {
+            setSavingItem(null);
+        }
+    };
+
+    // Check if batch is expired and request confirmation
+    const requestDeleteBatch = (batch, itemName, unit) => {
+        const batchAlert = getExpiryAlert(batch);
+        if (batchAlert && batchAlert.tone === 'expired') {
+            setPendingDeleteBatch({ batch, itemName, unit });
+            setShowDeleteConfirm(true);
+        } else {
+            handleDeleteBatch(batch.id);
+        }
+    };
+
+    const confirmDeleteExpiredBatch = async () => {
+        if (pendingDeleteBatch) {
+            setShowDeleteConfirm(false);
+            await handleDeleteBatch(pendingDeleteBatch.batch.id);
+            setPendingDeleteBatch(null);
+        }
+    };
+
+    const cancelDeleteExpiredBatch = () => {
+        setShowDeleteConfirm(false);
+        setPendingDeleteBatch(null);
+    };
+
+    const handleSaveBatch = async (item, batch) => {
+        const qty = editQuantities[batch.id] ?? batch.quantity;
+        const expiryValue = Object.prototype.hasOwnProperty.call(editBatchExpiries, batch.id)
+            ? editBatchExpiries[batch.id]
+            : (batch.expiry_date || '');
         if (!qty || qty <= 0) {
-            alert('Quantity must be greater than 0');
+            await handleDeleteBatch(batch.id);
             return;
         }
-        setSavingItem(item.id);
+        setSavingItem(batch.id);
         try {
-            await pantryService.updateItem(item.id, {
+            await pantryService.updateBatch(batch.id, {
                 quantity: qty,
-                expiry_date: item.expiry_date,
+                expiry_date: expiryValue || null,
                 low_stock_limit: item.low_stock_limit,
             });
             await fetchPantry();
             setEditQuantities((prev) => {
                 const updated = { ...prev };
-                delete updated[item.id];
+                delete updated[batch.id];
+                return updated;
+            });
+            setEditBatchExpiries((prev) => {
+                const updated = { ...prev };
+                delete updated[batch.id];
                 return updated;
             });
         } catch (err) {
-            const msg = err.response?.data?.error || 'Failed to update item';
+            const msg = err.response?.data?.error || 'Failed to update batch';
             alert(msg);
         } finally {
             setSavingItem(null);
@@ -623,13 +706,20 @@ const Pantry = () => {
                                                         <div style={rowStyle}>
                                                             <h4 style={nameStyle}>{item.ingredient_name || item.name || 'Unknown Item'}</h4>
                                                             <span style={qtyStyle}>
-                                                                {editQuantities[item.id] ?? item.quantity} {item.unit || 'units'}
+                                                                {item.quantity} {item.unit || 'units'}
                                                             </span>
                                                         </div>
                                                         <div style={metaStyle}>
-                                                            {item.expiry_date ? `Expires ${item.expiry_date}` : 'No expiry date'}
+                                                            {item.batch_count > 1
+                                                                ? item.expiry_date
+                                                                    ? `Next expiry ${item.expiry_date} across ${item.batch_count} batches`
+                                                                    : `${item.batch_count} batches tracked`
+                                                                : item.expiry_date
+                                                                    ? `Expires ${item.expiry_date}`
+                                                                    : 'No expiry date'}
                                                         </div>
-                                                        {expiryAlert && (
+                                                        {/* Only show item-level expiry alert if no batches (to avoid duplication) */}
+                                                        {expiryAlert && !item.batches?.length && (
                                                             <div
                                                                 style={{
                                                                     ...styles.expiryAlertChip,
@@ -646,24 +736,97 @@ const Pantry = () => {
                                                                 Low stock: {Number(item.quantity || 0)} / {Number(item.effective_low_stock_limit || 0)} {item.unit || ''}
                                                             </div>
                                                         )}
-                                                        <div style={styles.editRow}>
-                                                            <button style={styles.editBtn} onClick={() => handleAdjust(item, -1)}>
-                                                                <Minus size={14} />
-                                                            </button>
-                                                            <button style={styles.editBtn} onClick={() => handleAdjust(item, 1)}>
-                                                                <Plus size={14} />
-                                                            </button>
-                                                            {editQuantities[item.id] !== undefined && Number(editQuantities[item.id]) !== Number(item.quantity ?? 0) && (
-                                                                <button
-                                                                    style={{ ...styles.saveBtn, opacity: savingItem === item.id ? 0.7 : 1 }}
-                                                                    onClick={() => handleSaveQuantity(item)}
-                                                                    disabled={savingItem === item.id}
-                                                                    title="Save changes"
-                                                                >
-                                                                    <Save size={14} />
-                                                                </button>
-                                                            )}
-                                                        </div>
+                                                        {item.batches?.length > 0 && (
+                                                            <div style={styles.batchList}>
+                                                                {item.batches.map((batch, batchIndex) => {
+                                                                    const batchAlert = getExpiryAlert(batch);
+                                                                    const draftQuantity = editQuantities[batch.id] ?? batch.quantity;
+                                                                    const draftExpiry = Object.prototype.hasOwnProperty.call(editBatchExpiries, batch.id)
+                                                                        ? editBatchExpiries[batch.id]
+                                                                        : (batch.expiry_date || '');
+                                                                    const batchChanged = hasBatchChanges(batch);
+                                                                    const isExpired = batchAlert && batchAlert.tone === 'expired';
+                                                                    const isExpiringSoon = batchAlert && batchAlert.tone === 'warning';
+                                                                    return (
+                                                                        <div 
+                                                                            key={batch.id || `${item.id}-${batchIndex}`} 
+                                                                            style={{
+                                                                                ...styles.batchCard,
+                                                                                ...(isExpired ? styles.batchCardExpired : {}),
+                                                                                ...(isExpiringSoon ? styles.batchCardWarning : {})
+                                                                            }}
+                                                                        >
+                                                                            {/* Batch Header Row */}
+                                                                            <div style={styles.batchHeader}>
+                                                                                <div style={styles.batchInfo}>
+                                                                                    <span style={styles.batchNumber}>Batch {batchIndex + 1}</span>
+                                                                                    <span style={styles.batchQuantity}>{Number(draftQuantity || 0)} {item.unit || 'units'}</span>
+                                                                                    {batchAlert && (
+                                                                                        <span style={{
+                                                                                            ...styles.batchStatusBadge,
+                                                                                            ...(isExpired ? styles.batchStatusExpired : styles.batchStatusWarning)
+                                                                                        }}>
+                                                                                            {batchAlert.label}
+                                                                                        </span>
+                                                                                    )}
+                                                                                </div>
+                                                                                <div style={styles.batchActions}>
+                                                                                    {batchChanged && (
+                                                                                        <button
+                                                                                            style={styles.saveBatchBtn}
+                                                                                            onClick={() => handleSaveBatch(item, batch)}
+                                                                                            disabled={savingItem === batch.id}
+                                                                                            title="Save changes"
+                                                                                        >
+                                                                                            <Save size={14} />
+                                                                                        </button>
+                                                                                    )}
+                                                                                    <button
+                                                                                        style={styles.deleteBatchBtn}
+                                                                                        onClick={() => requestDeleteBatch(batch, item.ingredient_name || item.name, item.unit)}
+                                                                                        disabled={savingItem === batch.id}
+                                                                                        title="Delete batch"
+                                                                                    >
+                                                                                        <Trash2 size={14} />
+                                                                                    </button>
+                                                                                </div>
+                                                                            </div>
+                                                                            
+                                                                            {/* Batch Controls Row */}
+                                                                            <div style={styles.batchControlsRow}>
+                                                                                <div style={styles.batchControlGroup}>
+                                                                                    <label style={styles.batchControlLabel}>Expiry</label>
+                                                                                    <input
+                                                                                        type="date"
+                                                                                        style={styles.batchDateInput}
+                                                                                        value={draftExpiry}
+                                                                                        onChange={(e) => handleBatchExpiryChange(batch, e.target.value)}
+                                                                                    />
+                                                                                </div>
+                                                                                <div style={styles.batchControlGroup}>
+                                                                                    <label style={styles.batchControlLabel}>Qty</label>
+                                                                                    <div style={styles.batchQtyControls}>
+                                                                                        <button 
+                                                                                            style={styles.qtyBtn} 
+                                                                                            onClick={() => handleAdjustBatch(batch, -1)}
+                                                                                        >
+                                                                                            <Minus size={12} />
+                                                                                        </button>
+                                                                                        <span style={styles.qtyValue}>{Number(draftQuantity || 0)}</span>
+                                                                                        <button 
+                                                                                            style={styles.qtyBtn} 
+                                                                                            onClick={() => handleAdjustBatch(batch, 1)}
+                                                                                        >
+                                                                                            <Plus size={12} />
+                                                                                        </button>
+                                                                                    </div>
+                                                                                </div>
+                                                                            </div>
+                                                                        </div>
+                                                                    );
+                                                                })}
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 </div>
                                             );
@@ -752,6 +915,9 @@ const Pantry = () => {
                                     value={newItem.expiry_date}
                                     onChange={(e) => setNewItem({ ...newItem, expiry_date: e.target.value })}
                                 />
+                                <div style={styles.batchHint}>
+                                    Adding the same ingredient with a different expiry date creates a separate tracked batch.
+                                </div>
                             </div>
                             <div style={styles.formGroup}>
                                 <label>Low Stock Limit {selectedIngredient?.default_unit ? `(${selectedIngredient.default_unit})` : ''}</label>
@@ -769,6 +935,53 @@ const Pantry = () => {
                                 {adding ? 'Adding...' : 'Add Item'}
                             </button>
                         </form>
+                    </div>
+                </div>
+            )}
+
+            {/* Delete Confirmation Modal for Expired Batches */}
+            {showDeleteConfirm && pendingDeleteBatch && (
+                <div style={styles.confirmOverlay}>
+                    <div style={styles.confirmModal}>
+                        <div style={styles.confirmIconWrap}>
+                            <AlertTriangle size={32} />
+                        </div>
+                        <h3 style={styles.confirmTitle}>Remove Expired Batch?</h3>
+                        <div style={styles.confirmContent}>
+                            <p style={styles.confirmText}>
+                                This batch of <strong>{pendingDeleteBatch.itemName}</strong> has expired.
+                            </p>
+                            <div style={styles.confirmBatchInfo}>
+                                <span style={styles.confirmBatchLabel}>Quantity:</span>
+                                <span style={styles.confirmBatchValue}>
+                                    {Number(pendingDeleteBatch.batch.quantity || 0)} {pendingDeleteBatch.unit || 'units'}
+                                </span>
+                            </div>
+                            <div style={styles.confirmBatchInfo}>
+                                <span style={styles.confirmBatchLabel}>Expired:</span>
+                                <span style={styles.confirmBatchExpired}>
+                                    {pendingDeleteBatch.batch.expiry_date || 'Unknown date'}
+                                </span>
+                            </div>
+                            <p style={styles.confirmSubtext}>
+                                This action cannot be undone. The expired batch will be permanently removed from your pantry.
+                            </p>
+                        </div>
+                        <div style={styles.confirmActions}>
+                            <button
+                                style={styles.confirmCancelBtn}
+                                onClick={cancelDeleteExpiredBatch}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                style={styles.confirmDeleteBtn}
+                                onClick={confirmDeleteExpiredBatch}
+                            >
+                                <Trash2 size={16} />
+                                Remove Expired Batch
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}
@@ -874,9 +1087,263 @@ const styles = {
     expiryAlertWarning: { background: 'rgba(245, 158, 11, 0.14)', color: '#b45309', border: '1px solid rgba(245, 158, 11, 0.24)' },
     expiryAlertExpired: { background: 'rgba(239, 68, 68, 0.12)', color: '#dc2626', border: '1px solid rgba(239, 68, 68, 0.24)' },
     lowStockChip: { background: 'rgba(194, 38, 60, 0.08)', color: '#9d2334', border: '1px solid rgba(194, 38, 60, 0.16)' },
-    editRow: { display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.2rem' },
-    editBtn: { width: '30px', height: '30px', borderRadius: '10px', border: '1px solid rgba(198, 181, 150, 0.26)', background: '#fff', color: '#2d221c', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' },
-    saveBtn: { background: 'linear-gradient(135deg, #c2263c, #a9152c)', color: '#fff', border: 'none', width: '34px', height: '30px', borderRadius: '999px', fontWeight: '700', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' },
+    batchList: { display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.5rem' },
+    
+    // Batch Card Styles
+    batchCard: { 
+        display: 'flex', 
+        flexDirection: 'column', 
+        gap: '0.5rem', 
+        padding: '0.6rem 0.8rem', 
+        borderRadius: '10px', 
+        border: '1px solid rgba(194, 176, 144, 0.22)', 
+        background: 'rgba(255,255,255,0.9)',
+        transition: 'all 0.15s ease'
+    },
+    batchCardExpired: {
+        border: '1px solid rgba(220, 38, 38, 0.3)',
+        background: 'rgba(254, 242, 242, 0.9)'
+    },
+    batchCardWarning: {
+        border: '1px solid rgba(245, 158, 11, 0.3)',
+        background: 'rgba(255, 251, 235, 0.9)'
+    },
+    batchHeader: {
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        gap: '0.4rem'
+    },
+    batchInfo: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: '0.5rem',
+        flexWrap: 'wrap'
+    },
+    batchNumber: {
+        fontSize: '0.7rem',
+        fontWeight: '600',
+        color: '#8a7a6a',
+        background: 'rgba(194, 176, 144, 0.15)',
+        padding: '2px 6px',
+        borderRadius: '4px'
+    },
+    batchQuantity: {
+        fontSize: '0.85rem',
+        fontWeight: '600',
+        color: '#3a2d25'
+    },
+    batchStatusBadge: {
+        display: 'inline-flex',
+        alignItems: 'center',
+        padding: '2px 8px',
+        borderRadius: '999px',
+        fontSize: '0.68rem',
+        fontWeight: '600',
+        whiteSpace: 'nowrap'
+    },
+    batchStatusWarning: {
+        background: 'rgba(245, 158, 11, 0.12)',
+        color: '#b45309',
+        border: '1px solid rgba(245, 158, 11, 0.2)'
+    },
+    batchStatusExpired: {
+        background: 'rgba(220, 38, 38, 0.12)',
+        color: '#dc2626',
+        border: '1px solid rgba(220, 38, 38, 0.2)'
+    },
+    batchControlsRow: {
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        gap: '0.6rem'
+    },
+    batchControlGroup: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: '0.4rem'
+    },
+    batchControlLabel: {
+        fontSize: '0.7rem',
+        fontWeight: '500',
+        color: '#8a7a6a'
+    },
+    batchDateInput: { 
+        padding: '5px 8px', 
+        borderRadius: '6px', 
+        border: '1px solid rgba(193, 173, 139, 0.25)', 
+        background: 'rgba(255,255,255,0.95)', 
+        color: '#2d221c', 
+        fontSize: '0.78rem',
+        width: '130px'
+    },
+    batchQtyControls: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: '0.25rem'
+    },
+    qtyBtn: { 
+        width: '24px', 
+        height: '24px', 
+        borderRadius: '6px', 
+        border: '1px solid rgba(198, 181, 150, 0.25)', 
+        background: '#fff', 
+        color: '#5a4a3a', 
+        display: 'inline-flex', 
+        alignItems: 'center', 
+        justifyContent: 'center',
+        cursor: 'pointer',
+        transition: 'all 0.1s ease'
+    },
+    qtyValue: {
+        minWidth: '32px',
+        textAlign: 'center',
+        fontSize: '0.82rem',
+        fontWeight: '600',
+        color: '#3a2d25'
+    },
+    batchActions: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: '0.3rem'
+    },
+    saveBatchBtn: { 
+        background: 'linear-gradient(135deg, #16a34a, #15803d)', 
+        color: '#fff', 
+        border: 'none', 
+        width: '28px', 
+        height: '28px', 
+        borderRadius: '6px', 
+        display: 'inline-flex', 
+        alignItems: 'center', 
+        justifyContent: 'center',
+        cursor: 'pointer'
+    },
+    deleteBatchBtn: { 
+        width: '28px', 
+        height: '28px', 
+        borderRadius: '6px', 
+        border: '1px solid rgba(220, 38, 38, 0.2)', 
+        background: 'rgba(254, 242, 242, 0.8)', 
+        color: '#dc2626', 
+        display: 'inline-flex', 
+        alignItems: 'center', 
+        justifyContent: 'center',
+        cursor: 'pointer'
+    },
+    
+    // Confirmation Modal Styles
+    confirmOverlay: { 
+        position: 'fixed', 
+        top: 0, 
+        left: 0, 
+        right: 0, 
+        bottom: 0, 
+        background: 'rgba(0,0,0,0.6)', 
+        display: 'flex', 
+        alignItems: 'center', 
+        justifyContent: 'center', 
+        zIndex: 200,
+        backdropFilter: 'blur(4px)'
+    },
+    confirmModal: { 
+        background: 'linear-gradient(180deg, rgba(255,255,255,0.98), rgba(254,252,250,0.98))', 
+        padding: '1.8rem', 
+        borderRadius: '20px', 
+        width: '90%', 
+        maxWidth: '400px', 
+        boxShadow: '0 24px 60px rgba(100, 70, 50, 0.25)', 
+        border: '1px solid rgba(193, 173, 139, 0.28)'
+    },
+    confirmIconWrap: {
+        width: '56px',
+        height: '56px',
+        borderRadius: '50%',
+        background: 'rgba(239, 68, 68, 0.1)',
+        border: '1px solid rgba(239, 68, 68, 0.2)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        margin: '0 auto 1rem',
+        color: '#dc2626'
+    },
+    confirmTitle: {
+        margin: '0 0 1rem',
+        fontSize: '1.35rem',
+        fontWeight: '700',
+        color: '#1f1712',
+        textAlign: 'center'
+    },
+    confirmContent: {
+        marginBottom: '1.5rem'
+    },
+    confirmText: {
+        margin: '0 0 0.8rem',
+        fontSize: '0.95rem',
+        color: '#43372f',
+        textAlign: 'center',
+        lineHeight: '1.5'
+    },
+    confirmBatchInfo: {
+        display: 'flex',
+        justifyContent: 'center',
+        gap: '0.5rem',
+        padding: '0.5rem 0',
+        borderBottom: '1px dashed rgba(194, 176, 144, 0.2)'
+    },
+    confirmBatchLabel: {
+        fontSize: '0.85rem',
+        color: '#6c6156',
+        fontWeight: '500'
+    },
+    confirmBatchValue: {
+        fontSize: '0.85rem',
+        color: '#3a2d25',
+        fontWeight: '600'
+    },
+    confirmBatchExpired: {
+        fontSize: '0.85rem',
+        color: '#dc2626',
+        fontWeight: '600'
+    },
+    confirmSubtext: {
+        margin: '0.8rem 0 0',
+        fontSize: '0.82rem',
+        color: '#7a6d61',
+        textAlign: 'center',
+        lineHeight: '1.5'
+    },
+    confirmActions: {
+        display: 'flex',
+        gap: '0.75rem',
+        justifyContent: 'center'
+    },
+    confirmCancelBtn: {
+        padding: '10px 20px',
+        borderRadius: '10px',
+        border: '1px solid rgba(194, 176, 144, 0.3)',
+        background: 'rgba(255,255,255,0.9)',
+        color: '#43372f',
+        fontWeight: '600',
+        fontSize: '0.9rem',
+        cursor: 'pointer',
+        transition: 'all 0.15s ease'
+    },
+    confirmDeleteBtn: {
+        padding: '10px 20px',
+        borderRadius: '10px',
+        border: 'none',
+        background: 'linear-gradient(135deg, #dc2626, #b91c1c)',
+        color: '#fff',
+        fontWeight: '600',
+        fontSize: '0.9rem',
+        cursor: 'pointer',
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '6px',
+        transition: 'all 0.15s ease'
+    },
+    batchHint: { color: '#7a6d61', fontSize: '0.78rem', lineHeight: '1.4' },
     expandBtn: { marginTop: '1rem', background: 'rgba(255,255,255,0.9)', border: '1px solid rgba(194, 38, 60, 0.22)', color: '#9d2334', padding: '8px 16px', borderRadius: '999px', fontWeight: '700', cursor: 'pointer' },
 };
 

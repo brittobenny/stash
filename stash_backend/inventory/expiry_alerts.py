@@ -7,7 +7,7 @@ from django.utils import timezone
 
 from accounts.models import Notification
 
-from .models import PantryItem
+from .models import PantryItemBatch
 
 
 EXPIRY_ALERT_WINDOW_DAYS = 3
@@ -33,26 +33,33 @@ def get_expiry_status(expiry_date, today=None):
     return "fresh", days_until_expiry
 
 
-def _build_expiry_alert(item: PantryItem, today):
-    expiry_date = item.expiry_date
+def _build_expiry_alert(batch: PantryItemBatch, today):
+    expiry_date = batch.expiry_date
     if not expiry_date:
         return None
 
     status, days_until_expiry = get_expiry_status(expiry_date, today=today)
+    item = batch.pantry_item
     ingredient_name = (item.ingredient.name or "This item").strip()
+    batch_quantity = round(float(batch.quantity or 0.0), 2)
+    batch_unit = (item.ingredient.default_unit or "units").strip()
     formatted_date = expiry_date.strftime("%d %b %Y")
 
     if status == "expired":
-        title = "Pantry item expired"
-        message = f"{ingredient_name} expired on {formatted_date}. Please check it before using it."
-    elif status == "expires_today":
-        title = "Pantry item expires today"
-        message = f"{ingredient_name} expires today. Try to use it in your next meal."
-    elif status == "expiring_soon":
-        title = "Pantry item expiring soon"
+        title = "Pantry batch expired"
         message = (
-            f"{ingredient_name} expires in {days_until_expiry} {_pluralize_days(days_until_expiry)} "
-            f"on {formatted_date}. Plan to use it soon."
+            f"{ingredient_name} batch ({batch_quantity} {batch_unit}) expired on {formatted_date}. "
+            "Please check it before using it."
+        )
+    elif status == "expires_today":
+        title = "Pantry batch expires today"
+        message = f"{ingredient_name} batch ({batch_quantity} {batch_unit}) expires today. Try to use it soon."
+    elif status == "expiring_soon":
+        title = "Pantry batch expiring soon"
+        message = (
+            f"{ingredient_name} batch ({batch_quantity} {batch_unit}) expires in "
+            f"{days_until_expiry} {_pluralize_days(days_until_expiry)} on {formatted_date}. "
+            "Plan to use it soon."
         )
     else:
         return None
@@ -60,15 +67,18 @@ def _build_expiry_alert(item: PantryItem, today):
     data = {
         "kind": "pantry_expiry",
         "pantry_item_id": item.id,
+        "pantry_batch_id": batch.id,
         "ingredient_id": item.ingredient_id,
         "ingredient_name": ingredient_name,
+        "batch_quantity": batch_quantity,
+        "unit": batch_unit,
         "expiry_date": expiry_date.isoformat(),
         "days_until_expiry": days_until_expiry,
         "status": status,
     }
 
     return {
-        "key": (item.id, expiry_date.isoformat(), status),
+        "key": (batch.id, expiry_date.isoformat(), status),
         "title": title,
         "message": message,
         "data": data,
@@ -81,9 +91,9 @@ def sync_expiry_notifications_for_user(user) -> int:
 
     today = timezone.localdate()
     alert_cutoff = today + timedelta(days=EXPIRY_ALERT_WINDOW_DAYS)
-    pantry_items = list(
-        PantryItem.objects.select_related("ingredient").filter(
-            user=user,
+    pantry_batches = list(
+        PantryItemBatch.objects.select_related("pantry_item", "pantry_item__ingredient").filter(
+            pantry_item__user=user,
             quantity__gt=0,
             expiry_date__isnull=False,
             expiry_date__lte=alert_cutoff,
@@ -92,8 +102,8 @@ def sync_expiry_notifications_for_user(user) -> int:
 
     desired_alerts = []
     desired_keys = set()
-    for item in pantry_items:
-        alert = _build_expiry_alert(item, today)
+    for batch in pantry_batches:
+        alert = _build_expiry_alert(batch, today)
         if not alert:
             continue
         desired_alerts.append(alert)
@@ -107,7 +117,7 @@ def sync_expiry_notifications_for_user(user) -> int:
             continue
 
         key = (
-            data.get("pantry_item_id"),
+            data.get("pantry_batch_id"),
             data.get("expiry_date"),
             data.get("status"),
         )

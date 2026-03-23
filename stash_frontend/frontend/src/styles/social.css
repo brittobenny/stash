@@ -7,8 +7,11 @@
     radial-gradient(circle at 83% 18%, rgba(187, 224, 255, 0.56), transparent 28%),
     radial-gradient(circle at 93% 72%, rgba(221, 238, 255, 0.66), transparent 24%),
     linear-gradient(135deg, #fff6f5 0%, #fff8fb 34%, #f7fbff 70%, #eef6ff 100%);
+  background-size: 190% 190%;
   min-height: 100vh;
   overflow: hidden;
+  isolation: isolate;
+  animation: socialSkyDrift 34s cubic-bezier(0.42, 0, 0.18, 1) infinite alternate;
 }
 
 .social-page::before,
@@ -17,23 +20,26 @@
   position: absolute;
   border-radius: 999px;
   pointer-events: none;
-  filter: blur(4px);
+  filter: blur(10px);
+  mix-blend-mode: screen;
 }
 
 .social-page::before {
-  width: 420px;
-  height: 420px;
-  top: -140px;
-  left: -110px;
-  background: radial-gradient(circle, rgba(255, 198, 207, 0.55) 0%, rgba(255, 198, 207, 0.1) 58%, transparent 72%);
+  width: 560px;
+  height: 560px;
+  top: -190px;
+  left: -170px;
+  background: radial-gradient(circle, rgba(255, 198, 207, 0.42) 0%, rgba(255, 198, 207, 0.14) 52%, transparent 76%);
+  animation: socialBlobPink 30s cubic-bezier(0.42, 0, 0.18, 1) infinite alternate;
 }
 
 .social-page::after {
-  width: 360px;
-  height: 360px;
-  right: -80px;
-  bottom: -100px;
-  background: radial-gradient(circle, rgba(205, 229, 255, 0.58) 0%, rgba(205, 229, 255, 0.12) 60%, transparent 76%);
+  width: 520px;
+  height: 520px;
+  right: -150px;
+  bottom: -180px;
+  background: radial-gradient(circle, rgba(205, 229, 255, 0.46) 0%, rgba(205, 229, 255, 0.16) 50%, transparent 76%);
+  animation: socialBlobBlue 32s cubic-bezier(0.42, 0, 0.18, 1) infinite alternate;
 }
 
 .social-shell {
@@ -66,6 +72,48 @@
   box-shadow: 0 28px 64px rgba(127, 146, 181, 0.2);
   transform: translateY(-2px);
   transition: all 0.2s ease;
+}
+
+@keyframes socialSkyDrift {
+  0% {
+    background-position: 0% 8%;
+  }
+  50% {
+    background-position: 46% 34%;
+  }
+  100% {
+    background-position: 92% 64%;
+  }
+}
+
+@keyframes socialBlobPink {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 0.78;
+  }
+  100% {
+    transform: translate3d(120px, 86px, 0) scale(1.1);
+    opacity: 0.96;
+  }
+}
+
+@keyframes socialBlobBlue {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 0.74;
+  }
+  100% {
+    transform: translate3d(-140px, -96px, 0) scale(1.12);
+    opacity: 0.94;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .social-page,
+  .social-page::before,
+  .social-page::after {
+    animation: none;
+  }
 }
 
 .sidebar-card {

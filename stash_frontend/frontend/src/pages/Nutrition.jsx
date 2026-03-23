@@ -1,15 +1,19 @@
-
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Activity,
+  ChefHat,
   Flame,
   Medal,
   RefreshCw,
-  Shield,
   Sparkles,
   Star,
   Trophy,
+  TrendingUp,
+  TrendingDown,
+  Minus as TrendFlat,
+  Target,
+  Zap,
 } from 'lucide-react';
 import { nutritionService } from '../services/api';
 import '../styles/global.css';
@@ -30,32 +34,65 @@ const formatDate = (value) => {
   return `${y}-${m}-${day}`;
 };
 
+const formatShortDay = (value) => {
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleDateString(undefined, { weekday: 'short' });
+};
+
 const trendSummary = (points) => {
-  if (!points || points.length < 2) return { direction: 'flat', delta: 0 };
-  const delta = safeNum(points[points.length - 1].score) - safeNum(points[0].score);
+  const tracked = Array.isArray(points) ? points.filter((p) => p?.tracked !== false) : [];
+  if (tracked.length < 2) return { direction: 'flat', delta: 0, trackedDays: tracked.length };
+  const delta = safeNum(tracked[tracked.length - 1].score) - safeNum(tracked[0].score);
   if (delta > 3) return { direction: 'up', delta: Math.round(delta) };
   if (delta < -3) return { direction: 'down', delta: Math.round(delta) };
-  return { direction: 'flat', delta: Math.round(delta) };
+  return { direction: 'flat', delta: Math.round(delta), trackedDays: tracked.length };
 };
 
-const statusTone = (status) => {
-  if (status === 'on_track') return { color: '#166534', bg: 'rgba(34,197,94,0.16)' };
-  if (status === 'high') return { color: '#9a3412', bg: 'rgba(249,115,22,0.16)' };
-  return { color: '#991b1b', bg: 'rgba(239,68,68,0.14)' };
-};
+const dayLabel = (count) => (safeNum(count) === 1 ? 'day' : 'days');
 
-const Gauge = ({ value, unit }) => {
-  const pct = Math.max(0, Math.min(100, Math.round(safeNum(value))));
-  const ring = `conic-gradient(#f59e0b 0% ${pct}%, #e5e7eb ${pct}% 100%)`;
+const ScoreRing = ({ score, size = 88, unitLabel = 'score' }) => {
+  const pct = Math.max(0, Math.min(100, Math.round(safeNum(score))));
+  const color = pct >= 70 ? '#16a34a' : pct >= 40 ? '#d97706' : '#dc2626';
+  const ring = `conic-gradient(${color} 0% ${pct}%, #e5e7eb ${pct}% 100%)`;
   return (
-    <div style={{ ...styles.gauge, background: ring }}>
-      <div style={styles.gaugeInner}>
-        <div style={styles.gaugeValue}>{pct}</div>
-        <div style={styles.gaugeUnit}>{unit}</div>
+    <div style={{ width: size, height: size, borderRadius: '50%', background: ring, display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+      <div style={{ width: size - 16, height: size - 16, borderRadius: '50%', background: '#fff', display: 'grid', placeItems: 'center' }}>
+        <div>
+          <div style={{ fontSize: size > 70 ? '1.4rem' : '1rem', fontWeight: 800, color: '#1f1712', lineHeight: 1, textAlign: 'center' }}>{pct}</div>
+          <div style={{ fontSize: '0.65rem', color: '#7a6d61', textAlign: 'center' }}>{unitLabel}</div>
+        </div>
       </div>
     </div>
   );
 };
+
+const ProgressBar = ({ value, label, unit, color = '#e74c3c' }) => {
+  return (
+    <div style={styles.progressItem}>
+      <div style={styles.progressHead}>
+        <span style={styles.progressLabel}>{label}</span>
+        <span style={styles.progressValue}>{Math.round(safeNum(value))} {unit}</span>
+      </div>
+      <div style={styles.progressTrack}>
+        <div style={{ ...styles.progressFill, width: '100%', background: color }} />
+      </div>
+    </div>
+  );
+};
+
+const EmptyState = ({ navigate }) => (
+  <div style={styles.emptyState}>
+    <div style={styles.emptyIcon}><ChefHat size={48} strokeWidth={1.5} /></div>
+    <h2 style={styles.emptyTitle}>No nutrition data yet</h2>
+    <p style={styles.emptyText}>
+      Cook a recipe from your pantry to start tracking your daily nutrition, earn badges, and build your streak.
+    </p>
+    <button style={styles.emptyBtn} onClick={() => navigate('/customer/cook')}>
+      <Sparkles size={16} /> Start cooking
+    </button>
+  </div>
+);
 
 const Nutrition = () => {
   const navigate = useNavigate();
@@ -67,15 +104,7 @@ const Nutrition = () => {
   const [rewards, setRewards] = useState([]);
   const [cooked, setCooked] = useState([]);
   const [selectedDays, setSelectedDays] = useState(7);
-  const [activePage, setActivePage] = useState('daily');
-
-  const slides = useMemo(() => ([
-    { id: 'daily', title: 'Daily balance' },
-    { id: 'fuel', title: 'Fuel meters' },
-    { id: 'badges', title: 'Badges' },
-    { id: 'earned', title: 'Badges earned' },
-    { id: 'recipes', title: 'Recent recipes' },
-  ]), []);
+  const [activeTab, setActiveTab] = useState('overview');
 
   const loadNutrition = async (daysWindow = selectedDays) => {
     const safeDays = Math.max(1, Math.round(safeNum(daysWindow, 7)));
@@ -94,12 +123,14 @@ const Nutrition = () => {
         nutritionService.getCookedHistory({ limit: 20 }),
       ]);
       setSummary(sRes.data || null);
-      setDaily(dRes.data || []);
-      setWeekly(wRes.data || []);
-      setRewards(rRes.data || []);
-      setCooked(cRes.data || []);
-    } catch {
-      setError('Failed to load nutrition insights.');
+      setDaily(Array.isArray(dRes.data) ? dRes.data : []);
+      setWeekly(Array.isArray(wRes.data) ? wRes.data : []);
+      setRewards(Array.isArray(rRes.data) ? rRes.data : []);
+      setCooked(Array.isArray(cRes.data) ? cRes.data : []);
+    } catch (err) {
+      if (err?.response?.status !== 401) {
+        setError('Failed to load nutrition data. Make sure the server is running.');
+      }
     } finally {
       setLoading(false);
     }
@@ -107,413 +138,1240 @@ const Nutrition = () => {
 
   useEffect(() => { loadNutrition(selectedDays); }, [selectedDays]);
 
-  const latestWeekly = weekly[0] || null;
-  const latestReward = rewards[0] || null;
+  const hasData = cooked.length > 0 || daily.length > 0;
+  const todayKey = formatDate(new Date());
+
+  const todayData = useMemo(
+    () => daily.find((d) => d.date === todayKey) || null,
+    [daily, todayKey]
+  );
 
   const points = useMemo(() => {
-    const usable = [...daily]
-      .map((x) => ({ date: x.date, score: safeNum(x.score) }))
+    const summaryPoints = Array.isArray(summary?.weekly_trend?.points) ? summary.weekly_trend.points : [];
+    const source = selectedDays === 7 && summaryPoints.length ? summaryPoints : daily;
+    return [...source]
+      .map((x) => ({ date: x.date, score: safeNum(x.score), tracked: x.tracked !== false }))
       .filter((x) => x.date)
-      .sort((a, b) => String(a.date).localeCompare(String(b.date)));
-    return usable.slice(-7);
-  }, [daily]);
+      .sort((a, b) => String(a.date).localeCompare(String(b.date)))
+      .slice(-Math.min(selectedDays, 14));
+  }, [daily, selectedDays, summary]);
 
   const trend = useMemo(() => trendSummary(points), [points]);
+  const hasTodayData = Boolean(summary?.has_today_data || todayData);
+  const trackedDays = safeNum(summary?.weekly_trend?.tracked_days, points.filter((p) => p.tracked !== false).length);
+  const streakDays = useMemo(() => {
+    const summaryPoints = Array.isArray(summary?.weekly_trend?.points) ? summary.weekly_trend.points : [];
+    return summaryPoints.slice(-7).map((point) => ({
+      date: point.date,
+      label: formatShortDay(point.date),
+      tracked: point.tracked !== false,
+      healthy: point.tracked !== false && safeNum(point.score) >= 70,
+    }));
+  }, [summary]);
 
   const weeklyAvg = useMemo(() => {
-    const backend = safeNum(latestWeekly?.average_score);
+    const backend = safeNum(weekly[0]?.average_score);
     if (backend > 0) return Math.round(backend);
-    if (!points.length) return 0;
-    return Math.round(points.reduce((a, p) => a + safeNum(p.score), 0) / points.length);
-  }, [latestWeekly, points]);
+    const tracked = points.filter((p) => p.tracked !== false);
+    if (!tracked.length) return 0;
+    return Math.round(tracked.reduce((a, p) => a + safeNum(p.score), 0) / tracked.length);
+  }, [weekly, points]);
 
-  const display = useMemo(() => {
-    const pts = safeNum(summary?.points);
-    const lvl = Math.max(1, safeNum(summary?.level, 1));
-    return {
-      todayScore: safeNum(summary?.today_score),
-      weeklyAvg: Math.max(safeNum(summary?.weekly_score), weeklyAvg),
-      streak: safeNum(summary?.current_streak),
-      badges: safeNum(summary?.healthy_week_badges),
-      points: pts,
-      level: lvl,
-      longest: safeNum(summary?.longest_streak),
-    };
-  }, [summary, weeklyAvg]);
+  const display = useMemo(() => ({
+    todayScore: hasTodayData ? Math.max(safeNum(summary?.today_score), safeNum(todayData?.score)) : 0,
+    weeklyAvg: Math.max(safeNum(summary?.weekly_score), weeklyAvg),
+    streak: safeNum(summary?.current_streak),
+    longest: safeNum(summary?.longest_streak),
+    badges: safeNum(summary?.healthy_week_badges),
+    points: safeNum(summary?.points),
+    level: Math.max(1, safeNum(summary?.level, 1)),
+  }), [hasTodayData, summary, weeklyAvg, todayData]);
 
-  const totals = useMemo(() => {
-    const today = daily[0];
-    return {
-      calories: Math.round(safeNum(today?.total_calories)),
-      protein: Math.round(safeNum(today?.total_protein)),
-      carbs: Math.round(safeNum(today?.total_carbs)),
-      fats: Math.round(safeNum(today?.total_fats)),
-      vegetables: Number(safeNum(today?.total_vegetable_servings)).toFixed(1),
-    };
-  }, [daily]);
+  const totals = useMemo(() => ({
+    calories: safeNum(todayData?.total_calories),
+    protein: safeNum(todayData?.total_protein),
+    carbs: safeNum(todayData?.total_carbs),
+    fats: safeNum(todayData?.total_fats),
+    vegetables: safeNum(todayData?.total_vegetable_servings),
+  }), [todayData]);
 
-  const goals = summary?.goals || { calories: 2000, protein: 90, carbs: 250, fats: 70 };
-  const goalProgress = useMemo(() => {
-    if (summary?.goal_progress && Object.keys(summary.goal_progress).length) return summary.goal_progress;
-    const metrics = ['calories', 'protein', 'carbs', 'fats'];
-    return metrics.reduce((acc, m) => {
-      const value = safeNum(totals[m]);
-      const goal = safeNum(goals[m]);
-      const percent = goal > 0 ? Math.round((value / goal) * 100) : 0;
-      let status = 'low';
-      if (percent >= 90 && percent <= 110) status = 'on_track';
-      if (percent > 110) status = 'high';
-      acc[m] = { value, goal, percent, status };
-      return acc;
-    }, {});
-  }, [summary, totals, goals]);
+  const fixMyPlate = summary?.fix_my_plate || [];
 
-  const renderCard = () => {
-    if (activePage === 'daily') {
-      const trendText = `${trend.direction} (${trend.delta >= 0 ? '+' : ''}${trend.delta})`;
-      return (
-        <div style={styles.dailyHeroCard} className="nutrition-fill-card">
-          <div style={styles.dailyHeroBg} />
-          <div style={styles.dailyHeroOverlay} />
+  const TrendIcon = trend.direction === 'up' ? TrendingUp : trend.direction === 'down' ? TrendingDown : TrendFlat;
+  const trendColor = trend.direction === 'up' ? '#16a34a' : trend.direction === 'down' ? '#dc2626' : '#6b7280';
+  const trendHeadline = trackedDays < 2
+    ? `${trackedDays || 0} tracked ${trackedDays === 1 ? 'day' : 'days'}`
+    : trend.direction === 'flat'
+    ? 'Stable over period'
+    : `${Math.abs(trend.delta)} pts this week`;
+  const streakInsightMessage = trackedDays < 2
+    ? `You've logged ${trackedDays} ${dayLabel(trackedDays)} so far. Cook again tomorrow to unlock the weekly trend.`
+    : trend.direction === 'flat'
+      ? 'Your nutrition score has stayed steady this week.'
+      : trend.direction === 'up'
+        ? 'Your nutrition score is improving this week.'
+        : 'Your nutrition score dipped this week. One balanced day can lift it back up.';
 
-          <div style={styles.dailyHeroContent} className="nutrition-daily-content">
-            <div style={styles.dailyHeroLeft}>
-              <div style={styles.heroKicker}>PERFORMANCE</div>
-              <h2 style={styles.heroTitleDaily}>Daily balance</h2>
-
-              <div style={styles.heroStatsRow} className="nutrition-hero-stats">
-                <div style={styles.heroStat}>
-                  <div style={styles.heroStatValue}>{Math.round(display.todayScore)}</div>
-                  <div style={styles.heroStatUnit}>pts</div>
-                  <div style={styles.heroStatLabel}>Daily Score</div>
-                </div>
-
-                <div style={styles.heroStat}>
-                  <div style={styles.heroStatValue}>{Math.round(display.weeklyAvg)}</div>
-                  <div style={styles.heroStatUnit}>pts</div>
-                  <div style={styles.heroStatLabel}>Weekly Avg</div>
-                </div>
-
-                <div style={styles.heroStat}>
-                  <div style={styles.heroStreakDays}>S M T W T F S</div>
-                  <div style={styles.heroStreakGrid}>
-                    {Array.from({ length: 14 }).map((_, i) => (
-                      <span key={`h-streak-${i}`} style={i < display.streak ? styles.heroStreakOn : styles.heroStreakOff} />
-                    ))}
-                  </div>
-                  <div style={styles.heroStatLabel}>{display.streak} days</div>
-                </div>
-
-                <div style={styles.heroStat}>
-                  <div style={styles.heroBadgeIcon}><Trophy size={16} /></div>
-                  <div style={styles.heroStatUnit}>{display.badges} earned</div>
-                  <div style={styles.heroStatLabel}>Badges</div>
-                </div>
-              </div>
-
-              <div style={styles.heroTrend}>Trend {trendText}</div>
-            </div>
-          </div>
-        </div>
-      );
-    }
-
-    if (activePage === 'fuel') {
-      const fuelItems = [
-        { key: 'calories', label: 'Calories', unit: 'kcal' },
-        { key: 'protein', label: 'Protein', unit: 'g' },
-        { key: 'carbs', label: 'Carbs', unit: 'g' },
-        { key: 'fats', label: 'Fats', unit: 'g' },
-      ];
-      return (
-        <div style={styles.dailyHeroCard} className="nutrition-fill-card">
-          <div style={styles.dailyHeroBg} />
-          <div style={styles.dailyHeroOverlay} />
-          <div style={styles.dailyHeroContent} className="nutrition-daily-content">
-            <div style={styles.dailyHeroLeft}>
-              <div style={styles.heroKicker}>TODAY</div>
-              <h2 style={styles.heroTitleDaily}>Fuel meters</h2>
-              <div style={styles.heroStatsRow} className="nutrition-hero-stats">
-                {fuelItems.map((item) => {
-                  const gp = goalProgress[item.key] || {};
-                  const tone = statusTone(gp.status);
-                  return (
-                    <div key={item.key} style={styles.heroStat}>
-                      <div style={styles.heroStatValue}>{Math.round(safeNum(gp.value))}</div>
-                      <div style={styles.heroStatUnit}>{item.unit}</div>
-                      <div style={styles.heroStatLabel}>{item.label}</div>
-                      <div style={{ ...styles.heroMicro, color: tone.color }}>
-                        {Math.round(safeNum(gp.percent))}% • {(gp.status || 'low').replace('_', ' ')}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-              <div style={styles.heroTrend}>Vegetable servings {totals.vegetables}</div>
-              <button style={styles.heroCta} onClick={() => navigate('/customer/cook')}>
-                <Sparkles size={14} /> Log Meal
-              </button>
-            </div>
-          </div>
-        </div>
-      );
-    }
-
-    if (activePage === 'badges') {
-      return (
-        <div style={styles.dailyHeroCard} className="nutrition-fill-card">
-          <div style={styles.dailyHeroBg} />
-          <div style={styles.dailyHeroOverlay} />
-          <div style={styles.dailyHeroContent} className="nutrition-daily-content">
-            <div style={styles.dailyHeroLeft}>
-              <div style={styles.heroKicker}>PERFORMANCE</div>
-              <h2 style={styles.heroTitleDaily}>Badges</h2>
-              <div style={styles.heroStatsRow} className="nutrition-hero-stats">
-                <div style={styles.heroStat}>
-                  <div style={styles.heroStatValue}>{display.streak}</div>
-                  <div style={styles.heroStatUnit}>days</div>
-                  <div style={styles.heroStatLabel}>Current streak</div>
-                </div>
-                <div style={styles.heroStat}>
-                  <div style={styles.heroStatValue}>{display.longest}</div>
-                  <div style={styles.heroStatUnit}>days</div>
-                  <div style={styles.heroStatLabel}>Longest streak</div>
-                </div>
-                <div style={styles.heroStat}>
-                  <div style={styles.heroStatValue}>{display.badges}</div>
-                  <div style={styles.heroStatUnit}>earned</div>
-                  <div style={styles.heroStatLabel}>Healthy-week badges</div>
-                </div>
-                <div style={styles.heroStat}>
-                  <div style={styles.heroBadgeIcon}><Medal size={16} /></div>
-                  <div style={styles.heroStatUnit}>L{display.level}</div>
-                  <div style={styles.heroStatLabel}>Current level</div>
-                </div>
-              </div>
-              <div style={styles.heroTrend}>{display.points} total points</div>
-            </div>
-          </div>
-        </div>
-      );
-    }
-
-    if (activePage === 'earned') {
-      const rewardItems = rewards.slice(0, 4);
-      return (
-        <div style={styles.dailyHeroCard} className="nutrition-fill-card">
-          <div style={styles.dailyHeroBg} />
-          <div style={styles.dailyHeroOverlay} />
-          <div style={styles.dailyHeroContent} className="nutrition-daily-content">
-            <div style={styles.dailyHeroLeft}>
-              <div style={styles.heroKicker}>REWARDS</div>
-              <h2 style={styles.heroTitleDaily}>Badges earned</h2>
-              <div style={styles.heroStatsRow} className="nutrition-hero-stats">
-                {Array.from({ length: 4 }).map((_, idx) => {
-                  const reward = rewardItems[idx];
-                  return (
-                    <div key={`reward-${idx}`} style={styles.heroStat}>
-                      <div style={styles.heroBadgeIcon}><Trophy size={16} /></div>
-                      <div style={styles.heroStatUnit}>
-                        {reward ? `+${safeNum(reward.points)}` : '+0'}
-                      </div>
-                      <div style={styles.heroStatLabel}>
-                        {reward ? reward.title : 'No reward'}
-                      </div>
-                      <div style={styles.heroMicro}>
-                        {reward ? (reward.reference_date || '--') : '--'}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-              <div style={styles.heroTrend}>{latestReward?.title || 'No rewards earned yet'}</div>
-            </div>
-          </div>
-        </div>
-      );
-    }
-
-    const recipeItems = cooked.slice(0, 4);
-    return (
-      <div style={styles.dailyHeroCard} className="nutrition-fill-card">
-        <div style={styles.dailyHeroBg} />
-        <div style={styles.dailyHeroOverlay} />
-        <div style={styles.dailyHeroContent} className="nutrition-daily-content">
-          <div style={styles.dailyHeroLeft}>
-            <div style={styles.heroKicker}>COOKED</div>
-            <h2 style={styles.heroTitleDaily}>Recent recipes</h2>
-            <div style={styles.heroStatsRow} className="nutrition-hero-stats">
-              {Array.from({ length: 4 }).map((_, idx) => {
-                const item = recipeItems[idx];
-                return (
-                  <div key={`recipe-${idx}`} style={styles.heroStat}>
-                    <div style={styles.heroStatValue}>
-                      {item ? Math.round(safeNum(item.calories)) : 0}
-                    </div>
-                    <div style={styles.heroStatUnit}>kcal</div>
-                    <div style={styles.heroStatLabel}>{item ? item.recipe_name : 'No recipe'}</div>
-                    <div style={styles.heroMicro}>
-                      {item ? new Date(item.cooked_at).toLocaleDateString() : '--'}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-            <div style={styles.heroTrend}>{recipeItems.length} recipes logged</div>
-          </div>
-        </div>
-      </div>
-    );
-  };
+  const TABS = [
+    { id: 'overview', label: 'Overview' },
+    { id: 'today', label: "Today's Fuel" },
+    { id: 'history', label: 'History' },
+    { id: 'rewards', label: 'Rewards' },
+  ];
 
   return (
     <div style={styles.page}>
-      <div style={styles.headerRow}>
-        <div>
-          <h1 style={styles.pageTitle}>NUTRITION STUDIO</h1>
-          <p style={styles.pageSub}>Track your balance, fuel, rewards and recipes in one light workspace.</p>
-        </div>
-        <div style={styles.controls}>
-          <div style={styles.rangeWrap}>
-            {RANGE_OPTIONS.map((r) => (
-              <button key={r} style={selectedDays === r ? { ...styles.rangeBtn, ...styles.rangeBtnActive } : styles.rangeBtn} onClick={() => setSelectedDays(r)}>{r}D</button>
-            ))}
+      <div style={styles.pageGlowA} />
+      <div style={styles.pageGlowB} />
+      <div style={styles.pageShell}>
+        <div style={styles.headerRow}>
+          <div>
+            <h1 style={styles.pageTitle}>Nutrition Studio</h1>
+            <p style={styles.pageSub}>Track your daily balance, fuel, and streaks</p>
           </div>
-          <button style={styles.refreshBtn} onClick={() => loadNutrition(selectedDays)} disabled={loading}><RefreshCw size={15} className={loading ? 'spin' : ''} /> Refresh</button>
+          <div style={styles.headerActions}>
+            <div style={styles.headerControlShell}>
+              <div style={styles.rangeWrap}>
+                {RANGE_OPTIONS.map((r) => (
+                  <button
+                    key={r}
+                    style={selectedDays === r ? { ...styles.rangeBtn, ...styles.rangeBtnActive } : styles.rangeBtn}
+                    onClick={() => setSelectedDays(r)}
+                  >
+                    {r}D
+                  </button>
+                ))}
+              </div>
+              <button style={styles.refreshBtn} onClick={() => loadNutrition(selectedDays)} disabled={loading}>
+                <RefreshCw size={15} className={loading ? 'spin' : ''} />
+              </button>
+            </div>
+            <button style={styles.cookBtn} onClick={() => navigate('/customer/cook')}>
+              <ChefHat size={15} /> Cook Recipe
+            </button>
+          </div>
         </div>
+
+        {error && <div style={styles.errorBanner}>{error}</div>}
+
+        {loading ? (
+          <div style={styles.loadingBox}>
+            <div style={styles.loadingSpinner} />
+            <span style={{ color: '#7a6d61', fontSize: '0.9rem' }}>Loading nutrition data...</span>
+          </div>
+        ) : !hasData ? (
+          <EmptyState navigate={navigate} />
+        ) : (
+          <div style={styles.contentShell}>
+            <div style={styles.tabBar}>
+              {TABS.map((tab) => (
+                <button
+                  key={tab.id}
+                  style={activeTab === tab.id ? { ...styles.tabBtn, ...styles.tabBtnActive } : styles.tabBtn}
+                  onClick={() => setActiveTab(tab.id)}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
+            {activeTab === 'overview' && (
+              <div style={styles.grid}>
+                <div style={{ ...styles.card, ...styles.scoreCard }}>
+                  <div style={styles.cardLabel}><Activity size={14} /> Today&apos;s Score So Far</div>
+                  <div style={styles.scoreRow}>
+                    <ScoreRing score={display.todayScore} size={136} />
+                    <div style={styles.scoreStats}>
+                      <div style={styles.scoreStatPrimary}>
+                        <span style={styles.scoreStatVal}>{display.todayScore}</span>
+                        <span style={styles.scoreStatUnit}>score</span>
+                      </div>
+                      <div style={styles.scoreStatMeta}>
+                        <span><strong>{display.weeklyAvg}</strong> Weekly avg</span>
+                      </div>
+                      <div style={styles.scoreStat}>
+                        <span style={styles.scoreStatVal}>L{display.level}</span>
+                        <span style={styles.scoreStatLabel}>Level</span>
+                      </div>
+                      <div style={styles.scoreStat}>
+                        <span style={styles.scoreStatVal}>{display.streak}</span>
+                        <span style={styles.scoreStatLabel}>Day streak</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ ...styles.trendChip, color: trendColor }}>
+                    <TrendIcon size={14} />
+                    {trackedDays < 2
+                      ? 'Need more tracked days for a trend'
+                      : trend.direction === 'flat'
+                      ? 'Stable over period'
+                      : `${trend.direction === 'up' ? '+' : ''}${trend.delta} pts ${trend.direction === 'up' ? 'improved' : 'dropped'}`}
+                  </div>
+                </div>
+
+                <div style={styles.card}>
+                  <div style={styles.cardLabel}><Flame size={14} /> Streak & Badges</div>
+                  <div style={styles.streakGrid}>
+                    {streakDays.map((day) => (
+                      <div
+                        key={day.date}
+                        style={{
+                          ...styles.streakDay,
+                          borderColor: day.healthy ? 'rgba(225,29,46,0.18)' : 'var(--color-border)',
+                          background: day.healthy ? 'rgba(225,29,46,0.08)' : 'rgba(17,17,17,0.03)',
+                        }}
+                        title={
+                          day.healthy
+                            ? `${day.label}: healthy day`
+                            : day.tracked
+                              ? `${day.label}: tracked but not a healthy day`
+                              : `${day.label}: no nutrition data`
+                        }
+                      >
+                        <div
+                          style={{
+                            ...styles.streakDot,
+                            background: day.healthy
+                              ? 'linear-gradient(135deg, var(--color-primary), var(--color-accent))'
+                              : 'rgba(17,17,17,0.08)',
+                            opacity: day.tracked ? 1 : 0.45,
+                          }}
+                        />
+                        <div style={styles.streakDayLabel}>{day.label}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={styles.streakHelper}>Each labeled block shows a day from this week. Filled means that day counted as healthy.</div>
+                  <div style={styles.streakMeta}>
+                    <span><strong>{display.streak} {dayLabel(display.streak)}</strong> current streak</span>
+                    <span><strong>{display.longest} {dayLabel(display.longest)}</strong> best streak</span>
+                    <span><Trophy size={12} /> <strong>{display.badges}</strong> badges earned</span>
+                    <span><Star size={12} /> <strong>{display.points}</strong> reward points</span>
+                  </div>
+                  <div style={styles.streakInsight}>
+                    <div style={styles.streakInsightIcon}><Sparkles size={16} /></div>
+                    <div style={styles.streakInsightText}>
+                      {streakInsightMessage}
+                    </div>
+                  </div>
+                </div>
+
+                <div style={styles.card}>
+                  <div style={styles.cardLabel}><Target size={14} /> Fix My Plate</div>
+                  <div style={styles.fixPlateHero}>
+                    <div style={styles.fixPlateAura} />
+                    <div style={styles.fixPlatePlate}>
+                      <ChefHat size={28} />
+                    </div>
+                    <div style={styles.fixPlateProduceTomato} />
+                    <div style={styles.fixPlateProduceCarrot} />
+                    <div style={styles.fixPlateProduceLeaf} />
+                  </div>
+                  {fixMyPlate.length === 0 ? (
+                    <>
+                      <p style={styles.fixPlateText}>Cook a recipe today to get personalized suggestions.</p>
+                      <button style={styles.softActionBtn} onClick={() => navigate('/customer/cook')}>
+                        Find Recipes
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <div style={styles.suggestionList}>
+                        {fixMyPlate.slice(0, 2).map((s, i) => (
+                          <div
+                            key={i}
+                            style={{
+                              ...styles.suggestionItem,
+                              borderLeft: `3px solid ${s.priority === 'high' ? '#dc2626' : s.priority === 'medium' ? '#d97706' : '#16a34a'}`
+                            }}
+                          >
+                            <div style={styles.suggestionTitle}>{s.title}</div>
+                            <div style={styles.suggestionAction}>{s.action}</div>
+                          </div>
+                        ))}
+                      </div>
+                      <button style={styles.softActionBtn} onClick={() => navigate('/customer/cook')}>
+                        Find Recipes
+                      </button>
+                    </>
+                  )}
+                </div>
+
+                <div style={styles.card}>
+                  <div style={styles.cardLabel}><TrendingUp size={14} /> {selectedDays}-day Trend</div>
+                  {points.filter((p) => p.tracked !== false).length === 0 ? (
+                    <p style={styles.emptyCardText}>No score history in this period.</p>
+                  ) : (
+                    <>
+                      <div style={styles.trendLead}>
+                        <span style={{ ...styles.trendLeadValue, color: trendColor }}>
+                          <TrendIcon size={18} /> {trendHeadline}
+                        </span>
+                      </div>
+                      <div style={styles.chartPanel}>
+                        <div style={styles.barChart}>
+                          {points.map((p, i) => {
+                            const isTracked = p.tracked !== false;
+                            const h = isTracked ? Math.max(24, Math.round((safeNum(p.score) / 100) * 150)) : 14;
+                            return (
+                              <div key={i} style={styles.barWrap} title={isTracked ? `${p.date}: ${p.score} score` : `${p.date}: no data`}>
+                                <div
+                                  style={{
+                                    ...styles.bar,
+                                    height: `${h}px`,
+                                    opacity: isTracked ? 1 : 0.22,
+                                    background: isTracked ? styles.bar.background : 'linear-gradient(180deg, #d7dadd 0%, #eceff1 100%)',
+                                  }}
+                                />
+                                <div style={styles.barLabel}>{formatShortDay(p.date)}</div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'today' && (
+              <div style={styles.fuelSection}>
+                {!hasTodayData || !todayData ? (
+                  <div style={styles.emptyState}>
+                    <div style={styles.emptyIcon}><Zap size={36} strokeWidth={1.5} /></div>
+                    <h3 style={styles.emptyTitle}>No data for today</h3>
+                    <p style={styles.emptyText}>Cook a recipe to log today&apos;s nutrition.</p>
+                    <button style={styles.emptyBtn} onClick={() => navigate('/customer/cook')}>
+                      <ChefHat size={15} /> Cook Now
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <div style={styles.fuelHeader}>
+                      <ScoreRing score={todayData?.score || 0} size={96} />
+                      <div>
+                        <div style={styles.fuelTitle}>Today&apos;s Nutrition</div>
+                        <div style={styles.fuelDate}>{todayData?.date}</div>
+                        <div
+                          style={{
+                            ...styles.balancedBadge,
+                            background: todayData?.balanced ? 'rgba(22,163,74,0.12)' : 'rgba(220,38,38,0.1)',
+                            color: todayData?.balanced ? '#15803d' : '#dc2626',
+                          }}
+                        >
+                          {todayData?.balanced ? 'Balanced day' : 'Needs balance'}
+                        </div>
+                      </div>
+                    </div>
+                    <div style={styles.progressList}>
+                      <ProgressBar value={totals.calories} label="Calories" unit="kcal" color="linear-gradient(90deg,#ff8a3d,#f24c32)" />
+                      <ProgressBar value={totals.protein} label="Protein" unit="g" color="linear-gradient(90deg,#7c6bf1,#9f7aea)" />
+                      <ProgressBar value={totals.carbs} label="Carbs" unit="g" color="linear-gradient(90deg,#f4a83f,#f18c20)" />
+                      <ProgressBar value={totals.fats} label="Fats" unit="g" color="linear-gradient(90deg,#45c2d7,#0ea5b7)" />
+                      <ProgressBar value={totals.vegetables} label="Vegetables" unit="servings" color="linear-gradient(90deg,#65c466,#20a463)" />
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+
+            {activeTab === 'history' && (
+              <div style={styles.historySection}>
+                {daily.length === 0 && cooked.length === 0 ? (
+                  <p style={styles.emptyCardText}>No history in this period.</p>
+                ) : (
+                  <>
+                    {daily.length > 0 && (
+                      <div style={styles.historyGroup}>
+                        <h3 style={styles.historyGroupTitle}>Daily Scores</h3>
+                        <div style={styles.historyList}>
+                          {daily.map((d) => (
+                            <div key={d.date} style={styles.historyRow}>
+                              <ScoreRing score={d.score} size={52} />
+                              <div style={styles.historyInfo}>
+                                <div style={styles.historyDate}>{d.date}</div>
+                                <div style={styles.historyNutrients}>
+                                  <span>{Math.round(safeNum(d.total_calories))} kcal</span>
+                                  <span>{Math.round(safeNum(d.total_protein))}g protein</span>
+                                  <span>{Math.round(safeNum(d.total_carbs))}g carbs</span>
+                                </div>
+                              </div>
+                              {d.balanced && <span style={styles.balancedTag}>Balanced</span>}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {cooked.length > 0 && (
+                      <div style={styles.historyGroup}>
+                        <h3 style={styles.historyGroupTitle}>Cooked Recipes</h3>
+                        <div style={styles.historyList}>
+                          {cooked.map((c) => (
+                            <div key={c.id} style={styles.historyRow}>
+                              <div style={styles.recipeIcon}><ChefHat size={18} /></div>
+                              <div style={styles.historyInfo}>
+                                <div style={styles.historyDate}>{c.recipe_name}</div>
+                                <div style={styles.historyNutrients}>
+                                  <span>{Math.round(safeNum(c.calories))} kcal</span>
+                                  <span>{Math.round(safeNum(c.protein))}g protein</span>
+                                  <span>{new Date(c.cooked_at).toLocaleDateString()}</span>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+
+            {activeTab === 'rewards' && (
+              <div style={styles.rewardsSection}>
+                <div style={styles.rewardProfile}>
+                  <div style={styles.levelBadge}>L{display.level}</div>
+                  <div>
+                    <div style={styles.rewardProfileName}>{display.points} total points</div>
+                    <div style={styles.rewardProfileSub}>{display.badges} healthy-week badges | {display.streak}-day streak</div>
+                  </div>
+                </div>
+
+                {rewards.length === 0 ? (
+                  <div style={styles.emptyState}>
+                    <div style={styles.emptyIcon}><Trophy size={36} strokeWidth={1.5} /></div>
+                    <h3 style={styles.emptyTitle}>No rewards yet</h3>
+                    <p style={styles.emptyText}>Cook recipes and maintain streaks to earn badges and points.</p>
+                  </div>
+                ) : (
+                  <div style={styles.rewardList}>
+                    {rewards.map((r) => (
+                      <div key={r.id} style={styles.rewardRow}>
+                        <div style={styles.rewardDot}>
+                          {r.event_type === 'cook_log' ? <ChefHat size={16} /> :
+                           r.event_type === 'streak_bonus' ? <Flame size={16} /> :
+                           r.event_type === 'healthy_week_badge' ? <Medal size={16} /> :
+                           r.event_type === 'level_up' ? <Star size={16} /> :
+                           <Trophy size={16} />}
+                        </div>
+                        <div style={styles.rewardInfo}>
+                          <div style={styles.rewardTitle}>{r.title}</div>
+                          {r.description && <div style={styles.rewardDesc}>{r.description}</div>}
+                          <div style={styles.rewardMeta}>{r.reference_date} | {new Date(r.awarded_at).toLocaleDateString()}</div>
+                        </div>
+                        <div style={styles.rewardPoints}>+{r.points} pts</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
       </div>
-
-      {error && <div style={styles.error}>{error}</div>}
-
-      <div style={styles.moduleStrip} className="nutrition-module-strip">
-        {slides.map((slide) => (
-          <button key={slide.id} style={activePage === slide.id ? { ...styles.moduleBtn, ...styles.moduleBtnActive } : styles.moduleBtn} onClick={() => setActivePage(slide.id)}>
-            {slide.title}
-          </button>
-        ))}
-      </div>
-
-      <div style={styles.contentArea}>
-        {loading ? <div style={styles.loading}>Loading nutrition data...</div> : renderCard()}
-      </div>
-
     </div>
   );
 };
 
 const styles = {
-  page: { width: '100%', minHeight: 'calc(100vh - 88px)', background: 'var(--color-bg)', padding: '1.2rem 1.4rem 1.4rem', display: 'flex', flexDirection: 'column' },
-  headerRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', flexWrap: 'wrap', marginBottom: '0.55rem' },
-  pageTitle: { margin: 0, fontSize: '2rem', color: 'var(--color-text)', fontFamily: 'var(--font-heading)', letterSpacing: '0.02em' },
-  pageSub: { margin: '0.28rem 0 0', color: 'var(--color-text-muted)', fontSize: '0.9rem' },
-  controls: { display: 'flex', gap: '0.55rem', alignItems: 'center', flexWrap: 'wrap' },
-  rangeWrap: { display: 'flex', gap: '0.26rem', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '999px', padding: 4 },
-  rangeBtn: { border: 'none', borderRadius: '999px', background: 'transparent', color: 'var(--color-text-muted)', fontWeight: 700, padding: '7px 12px', cursor: 'pointer' },
-  rangeBtnActive: { background: 'rgba(225,29,46,0.12)', color: 'var(--color-primary)', border: '1px solid rgba(225,29,46,0.2)' },
-  refreshBtn: { border: '1px solid var(--color-border)', borderRadius: '999px', background: 'var(--color-surface)', color: 'var(--color-text)', fontWeight: 700, padding: '8px 13px', display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer' },
-  error: { background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.28)', borderRadius: 12, color: '#b91c1c', padding: '10px 12px', marginBottom: '0.8rem' },
-  moduleStrip: { display: 'flex', gap: '1.1rem', marginBottom: '0.95rem', borderBottom: '1px solid var(--color-border)', paddingBottom: '0.4rem', overflowX: 'auto' },
-  moduleBtn: { border: 'none', borderBottomWidth: 2, borderBottomStyle: 'solid', borderBottomColor: 'transparent', background: 'transparent', color: 'var(--color-text-muted)', padding: '6px 2px 10px', textAlign: 'left', fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' },
-  moduleBtnActive: { color: 'var(--color-text)', borderBottomWidth: 2, borderBottomStyle: 'solid', borderBottomColor: 'rgba(139,92,246,0.4)' },
-  contentArea: { width: '100%', flex: 1, display: 'flex', alignItems: 'stretch' },
-  loading: { borderRadius: 16, border: '1px solid var(--color-border)', background: 'var(--color-surface)', minHeight: 280, width: '100%', display: 'grid', placeItems: 'center', color: 'var(--color-text)' },
-  dailyHeroCard: { position: 'relative', borderRadius: 16, overflow: 'hidden', minHeight: 'calc(100vh - 230px)', width: '100%', border: '1px solid rgba(0,0,0,0.14)', boxShadow: '0 12px 22px rgba(0,0,0,0.1)' },
-  dailyHeroBg: { position: 'absolute', inset: 0, backgroundImage: 'url(https://images.unsplash.com/photo-1547592180-85f173990554?auto=format&fit=crop&w=1700&q=80)', backgroundSize: 'cover', backgroundPosition: 'center', filter: 'blur(7px) saturate(1.06) brightness(0.84)', transform: 'scale(1.1)' },
-  dailyHeroOverlay: { position: 'absolute', inset: 0, background: 'linear-gradient(90deg, rgba(24,26,34,0.62) 0%, rgba(26,28,36,0.54) 60%, rgba(28,30,38,0.64) 100%)' },
-  dailyHeroContent: { position: 'relative', zIndex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100%', padding: '1.1rem', color: '#f8fafc' },
-  dailyHeroLeft: { width: 'min(1180px, 96%)', margin: '0 auto', borderRadius: 14, border: '1px solid rgba(255,255,255,0.3)', background: 'rgba(28,30,38,0.34)', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)', padding: '1.2rem 1rem' },
-  heroKicker: { fontSize: '0.75rem', letterSpacing: '0.15em', fontWeight: 700, color: 'rgba(255,255,255,0.82)' },
-  heroTitleDaily: { margin: '0.28rem 0 0.7rem', fontFamily: '"Fraunces", "Times New Roman", serif', fontSize: '2.1rem', lineHeight: 1, color: '#fff7ed' },
-  heroStatsRow: { display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '0.45rem' },
-  heroStat: { borderRight: '1px solid rgba(255,255,255,0.18)', padding: '0 0.45rem', textAlign: 'center', minHeight: 136 },
-  heroStatValue: { fontSize: '3rem', lineHeight: 0.95, fontWeight: 800, color: '#fff' },
-  heroStatUnit: { fontSize: '0.9rem', color: 'rgba(255,255,255,0.75)', marginBottom: '0.34rem' },
-  heroStatLabel: { fontSize: '0.96rem', fontWeight: 700, color: '#fff7ed' },
-  heroStreakDays: { fontSize: '0.7rem', letterSpacing: '0.2em', marginBottom: '0.35rem', color: 'rgba(255,255,255,0.82)' },
-  heroStreakGrid: { display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4, marginBottom: '0.45rem' },
-  heroStreakOn: { height: 12, borderRadius: 4, background: 'linear-gradient(180deg,#ffe08a,#f59e0b)' },
-  heroStreakOff: { height: 12, borderRadius: 4, background: 'rgba(255,255,255,0.18)' },
-  heroBadgeIcon: { width: 44, height: 44, borderRadius: '50%', border: '1px solid rgba(255,255,255,0.33)', display: 'grid', placeItems: 'center', margin: '4px auto', color: '#e5e7eb' },
-  heroMicro: { marginTop: '0.3rem', fontSize: '0.74rem', color: 'rgba(255,255,255,0.72)' },
-  heroTrend: { marginTop: '0.55rem', color: 'rgba(255,255,255,0.84)', fontSize: '0.82rem' },
-  heroCta: { marginTop: '0.55rem', border: '1px solid rgba(255,255,255,0.28)', borderRadius: 999, background: 'rgba(255,255,255,0.12)', color: '#f8fafc', fontWeight: 700, padding: '8px 14px', display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer' },
-  sectionCard: { borderRadius: 16, border: '1px solid var(--color-border)', background: 'var(--color-surface)', padding: '1rem', boxShadow: 'var(--shadow-sm)', width: '100%', minHeight: 'calc(100vh - 260px)' },
-  sectionHead: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', color: 'var(--color-text)' },
-  sectionTitle: { margin: 0, fontSize: '1.12rem', fontWeight: 700, fontFamily: 'var(--font-heading)' },
-  grid4: { display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '0.65rem' },
-  grid3: { display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '0.65rem' },
-  metricCard: { borderRadius: 12, border: '1px solid var(--color-border)', background: 'var(--color-surface-2)', padding: '10px', textAlign: 'center' },
-  metricLabel: { color: 'var(--color-text-muted)', fontSize: '0.78rem', fontWeight: 600, marginBottom: '0.5rem', textTransform: 'capitalize' },
-  metricBig: { fontSize: '1.5rem', fontWeight: 800, color: 'var(--color-text)' },
-  gauge: { width: 92, height: 92, borderRadius: '50%', margin: '0 auto', display: 'grid', placeItems: 'center' },
-  gaugeInner: { width: 68, height: 68, borderRadius: '50%', background: 'var(--color-surface)', border: '1px solid var(--color-border)', display: 'grid', placeItems: 'center' },
-  gaugeValue: { fontSize: '1.45rem', fontWeight: 800, color: 'var(--color-text)', lineHeight: 1 },
-  gaugeUnit: { fontSize: '0.75rem', color: 'var(--color-text-muted)' },
-  badgeRow: { display: 'flex', justifyContent: 'center', gap: '0.45rem', marginBottom: '0.35rem' },
-  badgeDot: { width: 34, height: 34, borderRadius: '50%', display: 'grid', placeItems: 'center', border: '1px solid var(--color-border)', background: 'var(--color-surface)' },
-  stack: { display: 'grid', gap: '0.5rem' },
-  progressRow: { borderRadius: 10, border: '1px solid var(--color-border)', background: 'var(--color-surface-2)', padding: '8px 9px' },
-  progressHead: { display: 'flex', justifyContent: 'space-between', color: 'var(--color-text)', fontSize: '0.8rem', marginBottom: 4, textTransform: 'capitalize' },
-  track: { height: 7, borderRadius: '999px', background: '#e5e7eb', overflow: 'hidden' },
-  fill: { height: '100%', borderRadius: '999px', background: 'linear-gradient(90deg,#f59e0b,#ef4444)' },
-  pill: { marginTop: 5, display: 'inline-block', borderRadius: '999px', fontSize: '0.68rem', padding: '2px 7px', textTransform: 'capitalize', fontWeight: 700 },
-  cta: { border: '1px solid rgba(225,29,46,0.2)', borderRadius: 999, background: 'rgba(225,29,46,0.08)', color: 'var(--color-primary)', fontWeight: 700, padding: '8px 15px', display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer', marginTop: 8 },
-  levelLine: { display: 'grid', gridTemplateColumns: 'auto 1fr auto', alignItems: 'center', gap: 8, marginTop: 4, color: 'var(--color-text)' },
-  levelTrack: { height: 9, borderRadius: 999, background: '#e5e7eb', overflow: 'hidden' },
-  levelFill: { height: '100%', borderRadius: 999, background: 'linear-gradient(90deg,#f59e0b,#ef4444)' },
-  rewardHero: { width: 88, height: 88, borderRadius: '50%', margin: '4px auto 8px', background: 'radial-gradient(circle at 34% 30%, #fff7ed, #fdba74 58%, #fb7185)', display: 'grid', placeItems: 'center', color: '#7f1d1d' },
-  listRow: { display: 'grid', gridTemplateColumns: 'minmax(0,1.4fr) auto auto', gap: 6, alignItems: 'center', borderRadius: 10, border: '1px solid var(--color-border)', background: 'var(--color-surface-2)', padding: '8px 9px', fontSize: '0.83rem', color: 'var(--color-text)' },
-  metaText: { color: 'var(--color-text-muted)', fontSize: '0.86rem', marginTop: '0.3rem', textAlign: 'center' },
-  footerMeta: { marginTop: '0.7rem', fontSize: '0.82rem', color: 'var(--color-text-muted)' },
+  page: {
+    width: '100%',
+    minHeight: '100vh',
+    maxWidth: '1540px',
+    margin: '0 auto',
+    padding: '1.35rem',
+    position: 'relative',
+    background: 'var(--gradient-primary)',
+  },
+  pageGlowA: {
+    position: 'absolute',
+    top: '-6%',
+    left: '2%',
+    width: '44%',
+    height: '32%',
+    borderRadius: '50%',
+    background: 'radial-gradient(circle, rgba(225,29,46,0.14) 0%, rgba(225,29,46,0) 72%)',
+    pointerEvents: 'none',
+    filter: 'blur(8px)',
+  },
+  pageGlowB: {
+    position: 'absolute',
+    right: '3%',
+    top: '10%',
+    width: '30%',
+    height: '24%',
+    borderRadius: '50%',
+    background: 'radial-gradient(circle, rgba(17,17,17,0.08) 0%, rgba(17,17,17,0) 76%)',
+    pointerEvents: 'none',
+    filter: 'blur(10px)',
+  },
+  pageShell: {
+    position: 'relative',
+    zIndex: 1,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '1.1rem',
+    padding: '1.55rem',
+    borderRadius: 34,
+    border: '1px solid var(--color-border)',
+    background: 'linear-gradient(180deg, rgba(255,255,255,0.96), rgba(247,247,247,0.99))',
+    boxShadow: 'var(--shadow-lg), inset 0 1px 0 rgba(255,255,255,0.92)',
+    backdropFilter: 'blur(18px)',
+  },
+
+  headerRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: '1rem',
+    flexWrap: 'wrap',
+    borderRadius: 30,
+    border: '1px solid var(--color-border)',
+    background: 'linear-gradient(180deg, rgba(255,255,255,0.98), rgba(247,247,247,0.99))',
+    padding: '1.7rem 1.9rem',
+    boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.95), var(--shadow-sm)',
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  pageTitle: {
+    margin: 0,
+    fontSize: '3.2rem',
+    fontWeight: 700,
+    color: 'var(--color-text)',
+    fontFamily: 'Georgia, "Times New Roman", serif',
+    letterSpacing: '-0.03em',
+  },
+  pageSub: {
+    margin: '0.42rem 0 0',
+    color: 'var(--color-text-light)',
+    fontSize: '1.02rem',
+    maxWidth: '560px',
+  },
+  headerActions: {
+    display: 'flex',
+    gap: '0.85rem',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+  },
+  headerControlShell: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.5rem',
+    padding: 7,
+    borderRadius: 999,
+    background: 'var(--color-surface-2)',
+    border: '1px solid var(--color-border)',
+    boxShadow: 'var(--shadow-sm)',
+  },
+  rangeWrap: {
+    display: 'flex',
+    gap: '0.35rem',
+  },
+  rangeBtn: {
+    border: 'none',
+    borderRadius: 999,
+    background: 'transparent',
+    color: 'var(--color-text-light)',
+    fontWeight: 700,
+    padding: '13px 22px',
+    cursor: 'pointer',
+    fontSize: '0.94rem',
+    minWidth: 68,
+  },
+  rangeBtnActive: {
+    background: 'rgba(225,29,46,0.12)',
+    color: 'var(--color-primary)',
+    boxShadow: '0 8px 18px rgba(225,29,46,0.12)',
+  },
+  refreshBtn: {
+    border: 'none',
+    width: 46,
+    height: 46,
+    borderRadius: '50%',
+    background: 'transparent',
+    color: 'var(--color-text-light)',
+    display: 'grid',
+    placeItems: 'center',
+    cursor: 'pointer',
+  },
+  cookBtn: {
+    border: 'none',
+    borderRadius: 999,
+    background: 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-accent) 100%)',
+    color: '#fff',
+    fontWeight: 700,
+    padding: '14px 26px',
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 8,
+    cursor: 'pointer',
+    fontSize: '1rem',
+    boxShadow: '0 18px 32px rgba(225,29,46,0.22)',
+  },
+
+  errorBanner: {
+    background: 'rgba(239,68,68,0.09)',
+    border: '1px solid rgba(239,68,68,0.22)',
+    borderRadius: 20,
+    color: '#b91c1c',
+    padding: '13px 16px',
+    fontSize: '0.9rem',
+    boxShadow: '0 12px 22px rgba(120, 32, 32, 0.06)',
+  },
+  loadingBox: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '0.75rem',
+    minHeight: 280,
+    borderRadius: 30,
+    border: '1px solid var(--color-border)',
+    background: 'linear-gradient(180deg, rgba(255,255,255,0.98), rgba(247,247,247,0.99))',
+    boxShadow: 'var(--shadow-md)',
+  },
+  loadingSpinner: {
+    width: 32,
+    height: 32,
+    border: '3px solid rgba(225,29,46,0.14)',
+    borderTopColor: 'var(--color-primary)',
+    borderRadius: '50%',
+    animation: 'spin 0.8s linear infinite',
+  },
+
+  emptyState: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '0.9rem',
+    minHeight: 340,
+    textAlign: 'center',
+    padding: '2.6rem',
+    borderRadius: 30,
+    border: '1px solid var(--color-border)',
+    background: 'linear-gradient(180deg, rgba(255,255,255,0.98), rgba(247,247,247,0.99))',
+    boxShadow: 'var(--shadow-md)',
+  },
+  emptyIcon: {
+    width: 92,
+    height: 92,
+    borderRadius: '50%',
+    background: 'rgba(225,29,46,0.12)',
+    display: 'grid',
+    placeItems: 'center',
+    color: 'var(--color-primary)',
+    boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.92), 0 12px 24px rgba(225,29,46,0.1)',
+  },
+  emptyTitle: {
+    margin: 0,
+    fontSize: '1.45rem',
+    fontWeight: 700,
+    color: 'var(--color-text)',
+    fontFamily: 'Georgia, "Times New Roman", serif',
+  },
+  emptyText: {
+    margin: 0,
+    maxWidth: 440,
+    color: 'var(--color-text-light)',
+    lineHeight: 1.7,
+    fontSize: '0.95rem',
+  },
+  emptyBtn: {
+    border: 'none',
+    borderRadius: 999,
+    background: 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-accent) 100%)',
+    color: '#fff',
+    fontWeight: 700,
+    padding: '11px 22px',
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 7,
+    cursor: 'pointer',
+    fontSize: '0.94rem',
+    boxShadow: '0 14px 26px rgba(225,29,46,0.22)',
+  },
+  emptyCardText: {
+    margin: 0,
+    color: 'var(--color-text-light)',
+    fontSize: '0.9rem',
+    lineHeight: 1.6,
+  },
+
+  contentShell: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '1.25rem',
+    padding: '0.15rem',
+  },
+  tabBar: {
+    display: 'inline-flex',
+    gap: '0.45rem',
+    padding: '0.45rem',
+    borderRadius: 999,
+    border: '1px solid var(--color-border)',
+    background: 'var(--color-surface)',
+    overflowX: 'auto',
+    boxShadow: 'var(--shadow-sm)',
+  },
+  tabBtn: {
+    border: 'none',
+    borderRadius: 999,
+    background: 'transparent',
+    color: 'var(--color-text-light)',
+    padding: '13px 28px',
+    fontWeight: 700,
+    cursor: 'pointer',
+    fontSize: '0.98rem',
+    whiteSpace: 'nowrap',
+  },
+  tabBtnActive: {
+    color: 'var(--color-primary)',
+    background: 'rgba(225,29,46,0.12)',
+    boxShadow: '0 10px 18px rgba(225,29,46,0.12)',
+  },
+
+  grid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(290px, 1fr))',
+    gap: '1rem',
+  },
+  card: {
+    borderRadius: 30,
+    border: '1px solid var(--color-border)',
+    background: 'linear-gradient(180deg, rgba(255,255,255,0.98), rgba(247,247,247,0.99))',
+    padding: '1.45rem 1.45rem 1.35rem',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '0.95rem',
+    boxShadow: 'var(--shadow-md), inset 0 1px 0 rgba(255,255,255,0.92)',
+    minHeight: 380,
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  scoreCard: {},
+  cardLabel: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.55rem',
+    fontSize: '0.8rem',
+    fontWeight: 700,
+    color: 'var(--color-text-light)',
+    textTransform: 'uppercase',
+    letterSpacing: '0.12em',
+  },
+
+  scoreRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '1.35rem',
+    flexWrap: 'wrap',
+  },
+  scoreStats: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '0.55rem',
+    flex: 1,
+    minWidth: 150,
+  },
+  scoreStatPrimary: {
+    display: 'flex',
+    alignItems: 'baseline',
+    gap: '0.3rem',
+  },
+  scoreStat: {
+    display: 'flex',
+    alignItems: 'baseline',
+    gap: '0.35rem',
+  },
+  scoreStatVal: {
+    fontSize: '2.1rem',
+    fontWeight: 800,
+    color: 'var(--color-text)',
+    lineHeight: 1,
+  },
+  scoreStatUnit: {
+    fontSize: '0.95rem',
+    fontWeight: 700,
+    color: 'var(--color-text-light)',
+  },
+  scoreStatMeta: {
+    fontSize: '0.9rem',
+    color: 'var(--color-text-light)',
+  },
+  scoreStatLabel: {
+    fontSize: '0.88rem',
+    color: 'var(--color-text-light)',
+  },
+  trendChip: {
+    marginTop: 'auto',
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 6,
+    fontSize: '0.9rem',
+    fontWeight: 600,
+    paddingTop: '0.85rem',
+    borderTop: '1px solid var(--color-border)',
+  },
+
+  streakGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(7, minmax(0, 1fr))',
+    gap: 7,
+  },
+  streakDay: {
+    borderRadius: 10,
+    border: '1px solid var(--color-border)',
+    padding: '0.45rem 0.3rem',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '0.35rem',
+  },
+  streakDot: {
+    height: 20,
+    width: '100%',
+    borderRadius: 7,
+    boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.6)',
+  },
+  streakDayLabel: {
+    fontSize: '0.72rem',
+    fontWeight: 700,
+    color: 'var(--color-text-light)',
+    textTransform: 'uppercase',
+    letterSpacing: '0.04em',
+  },
+  streakMeta: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '0.8rem',
+    fontSize: '0.92rem',
+    color: 'var(--color-text-light)',
+    alignItems: 'center',
+  },
+  streakHelper: {
+    marginTop: '0.7rem',
+    fontSize: '0.84rem',
+    color: 'var(--color-text-light)',
+  },
+  streakInsight: {
+    marginTop: 'auto',
+    minHeight: 84,
+    borderRadius: 22,
+    border: '1px solid var(--color-border)',
+    background: 'var(--color-surface-2)',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.8rem',
+    padding: '0.95rem 1rem',
+  },
+  streakInsightIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: '50%',
+    display: 'grid',
+    placeItems: 'center',
+    background: 'rgba(225,29,46,0.12)',
+    color: 'var(--color-primary)',
+  },
+  streakInsightText: {
+    color: 'var(--color-text-light)',
+    fontSize: '0.92rem',
+    fontWeight: 600,
+  },
+
+  fixPlateHero: {
+    position: 'relative',
+    height: 150,
+    borderRadius: 24,
+    background: 'var(--color-surface-2)',
+    overflow: 'hidden',
+    display: 'grid',
+    placeItems: 'center',
+  },
+  fixPlateAura: {
+    position: 'absolute',
+    inset: '18px 22px auto',
+    height: 92,
+    borderRadius: '50%',
+    background: 'radial-gradient(circle, rgba(225,29,46,0.14) 0%, rgba(225,29,46,0) 72%)',
+  },
+  fixPlatePlate: {
+    position: 'relative',
+    zIndex: 2,
+    width: 94,
+    height: 94,
+    borderRadius: '50%',
+    background: 'linear-gradient(180deg, rgba(255,255,255,0.98), rgba(247,247,247,0.99))',
+    display: 'grid',
+    placeItems: 'center',
+    color: 'var(--color-primary)',
+    boxShadow: '0 14px 30px rgba(17,17,17,0.08)',
+  },
+  fixPlateProduceTomato: {
+    position: 'absolute',
+    bottom: 28,
+    left: 112,
+    width: 28,
+    height: 28,
+    borderRadius: '50%',
+    background: 'radial-gradient(circle at 35% 35%, #ff8e98, var(--color-primary) 68%)',
+    boxShadow: '0 8px 14px rgba(225,29,46,0.18)',
+  },
+  fixPlateProduceCarrot: {
+    position: 'absolute',
+    bottom: 32,
+    right: 100,
+    width: 58,
+    height: 18,
+    borderRadius: 20,
+    background: 'linear-gradient(90deg, #313131, #111111)',
+    transform: 'rotate(-28deg)',
+    boxShadow: '0 8px 14px rgba(17,17,17,0.16)',
+  },
+  fixPlateProduceLeaf: {
+    position: 'absolute',
+    bottom: 36,
+    right: 86,
+    width: 28,
+    height: 28,
+    borderRadius: '60% 20% 60% 20%',
+    background: 'linear-gradient(135deg, #4f9f57, #2d7f44)',
+    transform: 'rotate(20deg)',
+  },
+  fixPlateText: {
+    margin: 0,
+    color: 'var(--color-text-light)',
+    fontSize: '0.98rem',
+    lineHeight: 1.55,
+    minHeight: 64,
+  },
+  suggestionList: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '0.65rem',
+  },
+  suggestionItem: {
+    paddingLeft: '0.75rem',
+    paddingTop: '0.25rem',
+    paddingBottom: '0.25rem',
+  },
+  suggestionTitle: {
+    fontSize: '0.88rem',
+    fontWeight: 700,
+    color: 'var(--color-text)',
+  },
+  suggestionAction: {
+    fontSize: '0.82rem',
+    color: 'var(--color-text-light)',
+    marginTop: 2,
+    lineHeight: 1.55,
+  },
+  softActionBtn: {
+    marginTop: 'auto',
+    alignSelf: 'flex-start',
+    border: '1px solid rgba(225,29,46,0.18)',
+    borderRadius: 999,
+    background: 'rgba(225,29,46,0.08)',
+    color: 'var(--color-primary)',
+    fontWeight: 700,
+    padding: '12px 22px',
+    cursor: 'pointer',
+    fontSize: '0.95rem',
+    boxShadow: '0 10px 18px rgba(225,29,46,0.1)',
+  },
+
+  trendLead: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 6,
+  },
+  trendLeadValue: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 8,
+    fontSize: '1.05rem',
+    fontWeight: 700,
+  },
+  chartPanel: {
+    marginTop: '0.2rem',
+    padding: '0.9rem 0.85rem 0.7rem',
+    borderRadius: 22,
+    border: '1px solid var(--color-border)',
+    background: 'var(--color-surface-2)',
+  },
+  barChart: {
+    display: 'flex',
+    alignItems: 'flex-end',
+    gap: 8,
+    height: 190,
+    padding: '0.2rem 0.2rem 0',
+  },
+  barWrap: {
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    height: '100%',
+    gap: 10,
+  },
+  bar: {
+    width: '100%',
+    borderRadius: '14px 14px 8px 8px',
+    minHeight: 20,
+    transition: 'height 0.3s ease',
+    background: 'linear-gradient(180deg, #84d17d 0%, #50bd62 45%, #2d9848 100%)',
+    boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.28)',
+  },
+  barLabel: {
+    fontSize: '0.78rem',
+    color: 'var(--color-text-light)',
+  },
+
+  fuelSection: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '1rem',
+    maxWidth: 860,
+  },
+  fuelHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '1rem',
+    padding: '1.2rem 1.3rem',
+    borderRadius: 28,
+    border: '1px solid var(--color-border)',
+    background: 'linear-gradient(180deg, rgba(255,255,255,0.98), rgba(247,247,247,0.99))',
+    boxShadow: 'var(--shadow-md)',
+  },
+  fuelTitle: {
+    fontWeight: 800,
+    fontSize: '1.14rem',
+    color: 'var(--color-text)',
+  },
+  fuelDate: {
+    fontSize: '0.88rem',
+    color: 'var(--color-text-light)',
+    marginTop: 3,
+  },
+  balancedBadge: {
+    display: 'inline-block',
+    marginTop: '0.55rem',
+    padding: '5px 12px',
+    borderRadius: 999,
+    fontSize: '0.78rem',
+    fontWeight: 700,
+  },
+  progressList: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '0.9rem',
+    padding: '1.2rem 1.25rem',
+    borderRadius: 28,
+    border: '1px solid var(--color-border)',
+    background: 'linear-gradient(180deg, rgba(255,255,255,0.98), rgba(247,247,247,0.99))',
+    boxShadow: 'var(--shadow-md)',
+  },
+  progressItem: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 6,
+  },
+  progressHead: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: '0.8rem',
+  },
+  progressLabel: {
+    fontSize: '0.88rem',
+    fontWeight: 700,
+    color: 'var(--color-text)',
+    textTransform: 'capitalize',
+  },
+  progressValue: {
+    fontSize: '0.8rem',
+    color: 'var(--color-text-light)',
+  },
+  progressTrack: {
+    height: 12,
+    borderRadius: 999,
+    background: 'rgba(17,17,17,0.08)',
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    borderRadius: 999,
+    transition: 'width 0.4s ease',
+  },
+  progressStatus: {
+    fontSize: '0.75rem',
+    fontWeight: 600,
+  },
+
+  historySection: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '1.2rem',
+  },
+  historyGroup: {},
+  historyGroupTitle: {
+    margin: '0 0 0.75rem',
+    fontSize: '0.88rem',
+    fontWeight: 700,
+    color: 'var(--color-text-light)',
+    textTransform: 'uppercase',
+    letterSpacing: '0.12em',
+  },
+  historyList: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '0.7rem',
+  },
+  historyRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.95rem',
+    padding: '0.95rem 1.05rem',
+    borderRadius: 22,
+    border: '1px solid var(--color-border)',
+    background: 'linear-gradient(180deg, rgba(255,255,255,0.98), rgba(247,247,247,0.99))',
+    boxShadow: 'var(--shadow-sm)',
+  },
+  historyInfo: {
+    flex: 1,
+  },
+  historyDate: {
+    fontSize: '0.96rem',
+    fontWeight: 700,
+    color: 'var(--color-text)',
+  },
+  historyNutrients: {
+    display: 'flex',
+    gap: '0.7rem',
+    flexWrap: 'wrap',
+    marginTop: 4,
+    fontSize: '0.8rem',
+    color: 'var(--color-text-light)',
+  },
+  balancedTag: {
+    fontSize: '0.72rem',
+    fontWeight: 700,
+    padding: '4px 10px',
+    borderRadius: 999,
+    background: 'rgba(22,163,74,0.12)',
+    color: '#15803d',
+  },
+  recipeIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: '50%',
+    background: 'rgba(225,29,46,0.12)',
+    display: 'grid',
+    placeItems: 'center',
+    color: 'var(--color-primary)',
+    flexShrink: 0,
+  },
+
+  rewardsSection: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '1rem',
+  },
+  rewardProfile: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '1rem',
+    padding: '1.15rem 1.2rem',
+    borderRadius: 26,
+    border: '1px solid var(--color-border)',
+    background: 'linear-gradient(180deg, rgba(255,255,255,0.98), rgba(247,247,247,0.99))',
+    boxShadow: 'var(--shadow-md)',
+  },
+  levelBadge: {
+    width: 58,
+    height: 58,
+    borderRadius: '50%',
+    background: 'linear-gradient(135deg, var(--color-primary), var(--color-accent))',
+    color: '#fff',
+    display: 'grid',
+    placeItems: 'center',
+    fontWeight: 800,
+    fontSize: '1rem',
+    flexShrink: 0,
+    boxShadow: '0 12px 24px rgba(225,29,46,0.22)',
+  },
+  rewardProfileName: {
+    fontWeight: 700,
+    color: 'var(--color-text)',
+    fontSize: '1rem',
+  },
+  rewardProfileSub: {
+    fontSize: '0.84rem',
+    color: 'var(--color-text-light)',
+    marginTop: 2,
+  },
+  rewardList: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '0.6rem',
+  },
+  rewardRow: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: '0.9rem',
+    padding: '0.95rem 1rem',
+    borderRadius: 22,
+    border: '1px solid var(--color-border)',
+    background: 'linear-gradient(180deg, rgba(255,255,255,0.98), rgba(247,247,247,0.99))',
+    boxShadow: 'var(--shadow-sm)',
+  },
+  rewardDot: {
+    width: 40,
+    height: 40,
+    borderRadius: '50%',
+    background: 'rgba(225,29,46,0.1)',
+    border: '1px solid rgba(225,29,46,0.14)',
+    display: 'grid',
+    placeItems: 'center',
+    color: 'var(--color-primary)',
+    flexShrink: 0,
+  },
+  rewardInfo: {
+    flex: 1,
+  },
+  rewardTitle: {
+    fontSize: '0.92rem',
+    fontWeight: 700,
+    color: 'var(--color-text)',
+  },
+  rewardDesc: {
+    fontSize: '0.8rem',
+    color: 'var(--color-text-light)',
+    marginTop: 2,
+    lineHeight: 1.45,
+  },
+  rewardMeta: {
+    fontSize: '0.74rem',
+    color: 'var(--color-text-light)',
+    marginTop: 4,
+  },
+  rewardPoints: {
+    fontSize: '0.9rem',
+    fontWeight: 800,
+    color: 'var(--color-primary)',
+    flexShrink: 0,
+  },
 };
 
 export default Nutrition;
 
-if (typeof document !== 'undefined' && !document.getElementById('nutrition-light-layout')) {
+if (typeof document !== 'undefined' && !document.getElementById('nutrition-spin-style')) {
   const style = document.createElement('style');
-  style.id = 'nutrition-light-layout';
-  style.innerText = `
-    @media (max-width: 1200px) {
-      .nutrition-module-strip {
-        gap: 0.8rem;
-      }
-    }
-
-    @media (max-width: 900px) {
-      .nutrition-fill-card {
-        min-height: auto !important;
-      }
-
-      .nutrition-grid-4 {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-      }
-
-      .nutrition-grid-3 {
-        grid-template-columns: 1fr;
-      }
-
-      .nutrition-daily-content {
-        grid-template-columns: 1fr !important;
-      }
-
-      .nutrition-hero-stats {
-        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-      }
-    }
-
-    @media (max-width: 720px) {
-      .nutrition-module-strip {
-        gap: 0.6rem;
-      }
-
-      .nutrition-grid-4 {
-        grid-template-columns: 1fr;
-      }
-
-      .nutrition-hero-stats {
-        grid-template-columns: 1fr !important;
-      }
-    }
-  `;
+  style.id = 'nutrition-spin-style';
+  style.innerText = `@keyframes spin { to { transform: rotate(360deg); } } .spin { animation: spin 0.8s linear infinite; }`;
   document.head.appendChild(style);
 }

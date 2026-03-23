@@ -19,6 +19,22 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 HAS_CORSHEADERS = importlib.util.find_spec("corsheaders") is not None
 
 
+def _load_env_file(path: Path) -> None:
+    if not path.exists():
+        return
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        os.environ.setdefault(key, value)
+
+
+_load_env_file(BASE_DIR / ".env")
+
+
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
@@ -144,17 +160,20 @@ def _env_bool(name: str, default: bool = False) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
-EMAIL_BACKEND = os.getenv(
-    "EMAIL_BACKEND",
-    "django.core.mail.backends.console.EmailBackend",
-)
-DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "noreply@stash.local")
 EMAIL_HOST = os.getenv("EMAIL_HOST", "smtp.gmail.com")
 EMAIL_PORT = int(os.getenv("EMAIL_PORT", "587"))
 EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "")
 EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
 EMAIL_USE_TLS = _env_bool("EMAIL_USE_TLS", True)
 EMAIL_USE_SSL = _env_bool("EMAIL_USE_SSL", False)
+EMAIL_TIMEOUT = int(os.getenv("EMAIL_TIMEOUT", "20"))
+EMAIL_BACKEND = os.getenv(
+    "EMAIL_BACKEND",
+    "django.core.mail.backends.smtp.EmailBackend"
+    if EMAIL_HOST_USER and EMAIL_HOST_PASSWORD
+    else "django.core.mail.backends.console.EmailBackend",
+)
+DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", EMAIL_HOST_USER or "noreply@stash.local")
 
 # CORS (dev)
 CORS_ALLOWED_ORIGINS = [

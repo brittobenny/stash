@@ -108,6 +108,8 @@ export const pantryService = {
     addItem: (item) => api.post('/pantry/add/', item),
     listIngredients: () => api.get('/ingredients/'),
     updateItem: (id, payload) => api.patch(`/pantry/update/${id}/`, payload),
+    updateBatch: (id, payload) => api.patch(`/pantry/batches/${id}/`, payload),
+    deleteBatch: (id) => api.delete(`/pantry/batches/${id}/delete/`),
 };
 
 export const inventoryService = {
@@ -127,10 +129,22 @@ export const recipeService = {
     getRecommendations: (ingredients = null, options = {}) => {
         const top_k = Math.min(10, Math.max(1, Number(options.top_k || 10)));
         const min_match_percent = Number(options.min_match_percent ?? 25);
+        const hero_ingredient = typeof options.hero_ingredient === 'string' ? options.hero_ingredient.trim() : '';
         if (Array.isArray(ingredients) && ingredients.length > 0) {
-            return api.post('/recommend/', { ingredients, top_k, min_match_percent });
+            return api.post('/recommend/', {
+                ingredients,
+                top_k,
+                min_match_percent,
+                ...(hero_ingredient ? { hero_ingredient } : {}),
+            });
         }
-        return api.get('/recommend/', { params: { top_k, min_match_percent } });
+        return api.get('/recommend/', {
+            params: {
+                top_k,
+                min_match_percent,
+                ...(hero_ingredient ? { hero_ingredient } : {}),
+            },
+        });
     },
     getRecipeDetail: (recipeId, scale = 1) => {
         const params = scale && scale !== 1 ? { scale } : {};
