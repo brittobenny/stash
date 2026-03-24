@@ -671,7 +671,69 @@ const RecipeDetail = () => {
                             )}
                         </section>
 
-                        <section className="recipe-section-card fade-up">
+                        {(recipe.insufficient_ingredients?.length > 0 || filteredMissingIngredients.length > 0 || recipe.available_ingredients?.length > 0) && (
+                            <div className="recipe-alert-grid">
+                                {recipe.insufficient_ingredients?.length > 0 && (
+                                    <section className="recipe-section-card fade-up">
+                                        <h2 className="recipe-section-title">Low Stock Ingredients</h2>
+                                        <div className="recipe-tag-list">
+                                            {recipe.insufficient_ingredients.map((item, idx) => (
+                                                <span key={idx} className="recipe-tag is-low">{item}</span>
+                                            ))}
+                                        </div>
+                                    </section>
+                                )}
+
+                                {filteredMissingIngredients.length > 0 && (
+                                    <section className="recipe-section-card fade-up">
+                                        <h2 className="recipe-section-title"><AlertTriangle size={18} /> Missing Ingredients</h2>
+                                        <div className="recipe-tag-list">
+                                            {filteredMissingIngredients.map((item, idx) => (
+                                                <span key={idx} className="recipe-tag is-missing">{item}</span>
+                                            ))}
+                                        </div>
+                                        {recipe.substitution_suggestions?.length > 0 && (
+                                            <div className="recipe-sub-panel">
+                                                <div className="recipe-sub-title">Substitution suggestions</div>
+                                                {recipe.substitution_suggestions.map((suggestion, idx) => (
+                                                    <div key={`${suggestion.ingredient}-${idx}`} className="recipe-sub-row">
+                                                        <div className="recipe-sub-ingredient">{suggestion.ingredient}</div>
+                                                        <div className="recipe-sub-options">
+                                                            {suggestion.options.map((opt, optIdx) => (
+                                                                <span
+                                                                    key={`${suggestion.ingredient}-${optIdx}`}
+                                                                    className={`recipe-chip ${opt.pantry_has ? 'is-active' : ''}`}
+                                                                >
+                                                                    {opt.name}{opt.note ? ` (${opt.note})` : ''}
+                                                                </span>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                        <button className="recipe-btn-primary" onClick={handleAddMissingToCart} disabled={addingMissing}>
+                                            {addingMissing ? 'Adding...' : 'Add Missing to Cart'}
+                                        </button>
+                                        {addMissingMsg && <div className="recipe-muted">{addMissingMsg}</div>}
+                                    </section>
+                                )}
+
+                                {recipe.available_ingredients?.length > 0 && (
+                                    <section className="recipe-section-card fade-up">
+                                        <h2 className="recipe-section-title">Ingredients You Have</h2>
+                                        <div className="recipe-tag-list">
+                                            {(recipe.available_ingredients || []).filter(Boolean).map((item, idx) => (
+                                                <span key={idx} className="recipe-tag is-have">{item}</span>
+                                            ))}
+                                        </div>
+                                    </section>
+                                )}
+                            </div>
+                        )}
+
+                        <div className="recipe-ingredients-steps">
+                        <section className="recipe-section-card fade-up recipe-ingredients-card">
                             <h2 className="recipe-section-title">Ingredients</h2>
                             <div className="recipe-search">
                                 <Search size={16} />
@@ -712,7 +774,7 @@ const RecipeDetail = () => {
                             </div>
                         </section>
 
-                        <section className="recipe-section-card fade-up">
+                        <section className="recipe-section-card fade-up recipe-steps-card">
                             <div className="recipe-steps-header">
                                 <h2 className="recipe-section-title">Steps</h2>
                                 <div className="recipe-steps-controls">
@@ -805,66 +867,8 @@ const RecipeDetail = () => {
                                 ))}
                             </ol>
                         </section>
+                        </div>
                     </div>
-
-                    <aside className="recipe-side">
-                        {recipe.insufficient_ingredients?.length > 0 && (
-                            <section className="recipe-section-card fade-up">
-                                <h2 className="recipe-section-title">Low Stock Ingredients</h2>
-                                <div className="recipe-tag-list">
-                                    {recipe.insufficient_ingredients.map((item, idx) => (
-                                        <span key={idx} className="recipe-tag is-low">{item}</span>
-                                    ))}
-                                </div>
-                            </section>
-                        )}
-
-                        {filteredMissingIngredients.length > 0 && (
-                            <section className="recipe-section-card fade-up">
-                                <h2 className="recipe-section-title"><AlertTriangle size={18} /> Missing Ingredients</h2>
-                                <div className="recipe-tag-list">
-                                    {filteredMissingIngredients.map((item, idx) => (
-                                        <span key={idx} className="recipe-tag is-missing">{item}</span>
-                                    ))}
-                                </div>
-                                {recipe.substitution_suggestions?.length > 0 && (
-                                    <div className="recipe-sub-panel">
-                                        <div className="recipe-sub-title">Substitution suggestions</div>
-                                        {recipe.substitution_suggestions.map((suggestion, idx) => (
-                                            <div key={`${suggestion.ingredient}-${idx}`} className="recipe-sub-row">
-                                                <div className="recipe-sub-ingredient">{suggestion.ingredient}</div>
-                                                <div className="recipe-sub-options">
-                                                    {suggestion.options.map((opt, optIdx) => (
-                                                        <span
-                                                            key={`${suggestion.ingredient}-${optIdx}`}
-                                                            className={`recipe-chip ${opt.pantry_has ? 'is-active' : ''}`}
-                                                        >
-                                                            {opt.name}{opt.note ? ` (${opt.note})` : ''}
-                                                        </span>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
-                                <button className="recipe-btn-primary" onClick={handleAddMissingToCart} disabled={addingMissing}>
-                                    {addingMissing ? 'Adding...' : 'Add Missing to Cart'}
-                                </button>
-                                {addMissingMsg && <div className="recipe-muted">{addMissingMsg}</div>}
-                            </section>
-                        )}
-
-                        {recipe.available_ingredients?.length > 0 && (
-                            <section className="recipe-section-card fade-up">
-                                <h2 className="recipe-section-title">Ingredients You Have</h2>
-                                <div className="recipe-tag-list">
-                                    {(recipe.available_ingredients || []).filter(Boolean).map((item, idx) => (
-                                        <span key={idx} className="recipe-tag is-have">{item}</span>
-                                    ))}
-                                </div>
-                            </section>
-                        )}
-                    </aside>
                 </div>
 
                 {cookResult && (

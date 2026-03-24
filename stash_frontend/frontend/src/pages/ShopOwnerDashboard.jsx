@@ -7,6 +7,10 @@ import {
     Calendar,
     AlertTriangle,
     Download,
+    CheckCircle,
+    PackageOpen,
+    AlertCircle,
+    ArrowUpRight
 } from 'lucide-react';
 import { shopOwnerService } from '../services/api';
 import { formatCurrency } from '../utils/currency';
@@ -78,278 +82,273 @@ const ShopOwnerDashboard = () => {
     };
 
     return (
-        <div style={styles.page}>
-            <section style={styles.hero}>
-                <div style={styles.heroContent}>
-                    <span style={styles.kicker}>Shop Owner Dashboard</span>
-                    <h1 style={styles.title}>Operations Command Center</h1>
-                    <p style={styles.subtitle}>
-                        Live sales analytics, low-stock alerts, and export-ready reporting for your store.
-                    </p>
-                    <div style={styles.filterRow}>
-                        <div style={styles.filterField}>
-                            <label>From</label>
-                            <input
-                                type="date"
-                                value={filters.date_from}
-                                onChange={(e) => setFilters((prev) => ({ ...prev, date_from: e.target.value }))}
-                                style={styles.input}
-                            />
-                        </div>
-                        <div style={styles.filterField}>
-                            <label>To</label>
-                            <input
-                                type="date"
-                                value={filters.date_to}
-                                onChange={(e) => setFilters((prev) => ({ ...prev, date_to: e.target.value }))}
-                                style={styles.input}
-                            />
-                        </div>
-                    </div>
-                    <div style={styles.heroActions}>
-                        <button style={styles.primaryBtn} onClick={loadAnalytics} disabled={loading}>
-                            {loading ? 'Refreshing...' : 'Refresh Data'}
-                        </button>
-                        <button style={styles.secondaryBtn} onClick={handleExport} disabled={exporting}>
-                            <Download size={16} /> {exporting ? 'Exporting...' : 'Export CSV'}
-                        </button>
-                    </div>
-                </div>
-                <div style={styles.heroPanel}>
-                    <div style={styles.panelCard}>
-                        <div style={styles.panelIcon}><IndianRupee size={18} /></div>
+        <div className="min-h-screen bg-slate-50/50 p-6 lg:p-10 font-sans text-slate-800">
+            {/* HERO SECTION */}
+            <section className="mb-10 relative overflow-hidden rounded-[2rem] bg-slate-900 border border-slate-800 text-white shadow-2xl p-8 lg:p-12">
+                <div className="absolute inset-0 bg-gradient-to-br from-indigo-600/20 to-rose-600/20 z-0"></div>
+                <div className="absolute -top-32 -right-32 w-96 h-96 bg-indigo-500/20 rounded-full blur-3xl"></div>
+                
+                <div className="relative z-10 grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
+                    <div className="flex flex-col gap-6">
                         <div>
-                            <p style={styles.panelLabel}>Revenue</p>
-                            <p style={styles.panelValue}>{formatCurrency(summary.total_revenue)}</p>
+                            <span className="uppercase tracking-widest text-xs font-bold text-indigo-300 mb-2 block">Shop Owner Dashboard</span>
+                            <h1 className="text-4xl lg:text-5xl font-serif font-bold text-white mb-4">Operations Command Center</h1>
+                            <p className="text-slate-300 text-lg max-w-lg leading-relaxed">
+                                Live sales analytics, low-stock alerts, and export-ready reporting for your store.
+                            </p>
+                        </div>
+                        
+                        <div className="flex flex-wrap items-end gap-4 mt-2">
+                            <div className="flex flex-col gap-1.5">
+                                <label className="text-xs text-slate-400 font-medium uppercase tracking-wider">From</label>
+                                <input
+                                    type="date"
+                                    value={filters.date_from}
+                                    onChange={(e) => setFilters((prev) => ({ ...prev, date_from: e.target.value }))}
+                                    className="px-4 py-2.5 rounded-xl bg-white/10 border border-white/20 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                />
+                            </div>
+                            <div className="flex flex-col gap-1.5">
+                                <label className="text-xs text-slate-400 font-medium uppercase tracking-wider">To</label>
+                                <input
+                                    type="date"
+                                    value={filters.date_to}
+                                    onChange={(e) => setFilters((prev) => ({ ...prev, date_to: e.target.value }))}
+                                    className="px-4 py-2.5 rounded-xl bg-white/10 border border-white/20 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                />
+                            </div>
+                            <button 
+                                onClick={loadAnalytics} 
+                                disabled={loading}
+                                className="px-6 py-2.5 bg-indigo-500 hover:bg-indigo-600 text-white rounded-xl font-semibold transition-colors duration-200 mt-2 lg:mt-0 shadow-lg shadow-indigo-500/30"
+                            >
+                                {loading ? 'Refreshing...' : 'Apply Filter'}
+                            </button>
+                            <button 
+                                onClick={handleExport} 
+                                disabled={exporting}
+                                className="px-6 py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-600 text-white rounded-xl font-semibold transition-colors duration-200 flex items-center gap-2"
+                            >
+                                <Download size={18} /> {exporting ? 'Exporting...' : 'Export'}
+                            </button>
                         </div>
                     </div>
-                    <div style={styles.panelCard}>
-                        <div style={styles.panelIcon}><Package size={18} /></div>
-                        <div>
-                            <p style={styles.panelLabel}>Orders</p>
-                            <p style={styles.panelValue}>{summary.total_orders || 0}</p>
-                        </div>
-                    </div>
-                    <div style={styles.panelCard}>
-                        <div style={styles.panelIcon}><Layers size={18} /></div>
-                        <div>
-                            <p style={styles.panelLabel}>Items sold</p>
-                            <p style={styles.panelValue}>{summary.total_items_sold || 0}</p>
-                        </div>
-                    </div>
-                    <div style={styles.panelCard}>
-                        <div style={styles.panelIcon}><TrendingUp size={18} /></div>
-                        <div>
-                            <p style={styles.panelLabel}>Avg order value</p>
-                            <p style={styles.panelValue}>{formatCurrency(summary.avg_order_value)}</p>
-                        </div>
-                    </div>
-                </div>
-            </section>
 
-            <section style={styles.reportSection}>
-                <div style={styles.sectionHeader}>
-                    <div>
-                        <h2 style={styles.sectionTitle}>Sales trend</h2>
-                        <p style={styles.sectionSubtitle}>Daily revenue for the selected period.</p>
-                    </div>
-                    <div style={styles.reportBadge}>
-                        <Calendar size={14} /> {filters.date_from} to {filters.date_to}
-                    </div>
-                </div>
-                <div style={styles.reportGrid}>
-                    <div style={styles.reportCard}>
-                        <div style={styles.reportMetric}>
-                            <p>Delivered orders</p>
-                            <strong>{summary.delivered_orders || 0}</strong>
-                        </div>
-                        <div style={styles.reportMetric}>
-                            <p>Low stock products</p>
-                            <strong>{summary.low_stock_count || 0}</strong>
-                        </div>
-                        <div style={styles.reportMetric}>
-                            <p>Out of stock</p>
-                            <strong>{summary.out_of_stock_count || 0}</strong>
-                        </div>
-                    </div>
-                    <div style={styles.chartCard}>
-                        <div style={styles.chartHeader}>
-                            <h3>Revenue trend</h3>
-                            <div style={styles.chartToggle}>
-                                <button
-                                    style={chartMode === 'day' ? styles.toggleActive : styles.toggleBtn}
-                                    onClick={() => setChartMode('day')}
-                                >
-                                    Day
-                                </button>
-                                <button
-                                    style={chartMode === 'week' ? styles.toggleActive : styles.toggleBtn}
-                                    onClick={() => setChartMode('week')}
-                                >
-                                    Week
-                                </button>
-                                <button
-                                    style={chartMode === 'month' ? styles.toggleActive : styles.toggleBtn}
-                                    onClick={() => setChartMode('month')}
-                                >
-                                    Month
-                                </button>
+                    <div className="grid grid-cols-2 gap-4 lg:gap-6">
+                        <div className="bg-white/10 backdrop-blur-md border border-white/10 p-5 rounded-2xl flex items-center gap-4 hover:bg-white/15 transition-colors">
+                            <div className="w-12 h-12 rounded-xl bg-indigo-500/20 text-indigo-300 flex items-center justify-center shrink-0">
+                                <IndianRupee size={24} strokeWidth={2.5} />
+                            </div>
+                            <div>
+                                <p className="text-sm text-slate-400 font-medium mb-1">Revenue</p>
+                                <p className="text-2xl font-bold text-white">{formatCurrency(summary.total_revenue || 0)}</p>
                             </div>
                         </div>
-                        <div style={styles.chartBars}>
-                            {chartRows.length === 0 && <div style={styles.emptyText}>No sales in this period.</div>}
-                            {chartRows.map((item) => (
-                                <div key={item.date || item.week || item.month} style={styles.chartBarWrap}>
-                                    <div
-                                        style={{
-                                            ...styles.chartBar,
-                                            height: `${Math.max(10, (Number(item.revenue || 0) / maxRevenue) * 100)}%`,
-                                        }}
-                                        title={`Revenue: ${formatCurrency(item.revenue)}`}
-                                    ></div>
-                                    <span>
-                                        {chartMode === 'day' && item.date?.slice(5)}
-                                        {chartMode === 'week' && item.week?.slice(5)}
-                                        {chartMode === 'month' && item.month?.slice(5)}
-                                    </span>
-                                </div>
-                            ))}
+                        <div className="bg-white/10 backdrop-blur-md border border-white/10 p-5 rounded-2xl flex items-center gap-4 hover:bg-white/15 transition-colors">
+                            <div className="w-12 h-12 rounded-xl bg-emerald-500/20 text-emerald-300 flex items-center justify-center shrink-0">
+                                <Package size={24} strokeWidth={2.5} />
+                            </div>
+                            <div>
+                                <p className="text-sm text-slate-400 font-medium mb-1">Orders</p>
+                                <p className="text-2xl font-bold text-white">{summary.total_orders || 0}</p>
+                            </div>
+                        </div>
+                        <div className="bg-white/10 backdrop-blur-md border border-white/10 p-5 rounded-2xl flex items-center gap-4 hover:bg-white/15 transition-colors">
+                            <div className="w-12 h-12 rounded-xl bg-rose-500/20 text-rose-300 flex items-center justify-center shrink-0">
+                                <Layers size={24} strokeWidth={2.5} />
+                            </div>
+                            <div>
+                                <p className="text-sm text-slate-400 font-medium mb-1">Items Sold</p>
+                                <p className="text-2xl font-bold text-white">{summary.total_items_sold || 0}</p>
+                            </div>
+                        </div>
+                        <div className="bg-white/10 backdrop-blur-md border border-white/10 p-5 rounded-2xl flex items-center gap-4 hover:bg-white/15 transition-colors">
+                            <div className="w-12 h-12 rounded-xl bg-amber-500/20 text-amber-300 flex items-center justify-center shrink-0">
+                                <TrendingUp size={24} strokeWidth={2.5} />
+                            </div>
+                            <div>
+                                <p className="text-sm text-slate-400 font-medium mb-1">AOV</p>
+                                <p className="text-2xl font-bold text-white">{formatCurrency(summary.avg_order_value || 0)}</p>
+                            </div>
                         </div>
                     </div>
                 </div>
             </section>
 
-            <section style={styles.tableSection}>
-                <div style={styles.tableCard}>
-                    <h3 style={styles.tableTitle}>Top products</h3>
-                    <div style={styles.tableWrap}>
-                        <table style={styles.table}>
-                            <thead>
-                                <tr>
-                                    <th style={styles.th}>Product</th>
-                                    <th style={styles.th}>Units</th>
-                                    <th style={styles.th}>Revenue</th>
-                                    <th style={styles.th}>Stock</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {topProducts.map((p) => (
-                                    <tr key={p.product_id}>
-                                        <td style={styles.td}>{p.name}</td>
-                                        <td style={styles.td}>{p.units_sold}</td>
-                                        <td style={styles.td}>{formatCurrency(p.revenue)}</td>
-                                        <td style={styles.td}>
-                                            {p.stock_quantity}
-                                            {p.low_stock ? <span style={styles.lowTag}>Low</span> : null}
-                                        </td>
-                                    </tr>
+            {/* MAIN DASHBOARD CONTENT */}
+            <div className="space-y-8">
+                
+                {/* Sales Trend Section - Redesigned precisely matching screenshot structure */}
+                <div className="flex flex-col lg:flex-row gap-6">
+                    
+                    {/* Metrics List Panel */}
+                    <div className="lg:w-1/3 bg-white/90 backdrop-blur-xl border border-slate-200 shadow-xl shadow-slate-200/50 rounded-3xl p-8 flex flex-col justify-center">
+                        <div className="mb-8">
+                            <h2 className="text-2xl font-serif font-bold text-slate-900 mb-2">Sales trend</h2>
+                            <p className="text-slate-500 text-sm">Daily revenue for the selected period.</p>
+                        </div>
+                        
+                        <div className="space-y-6">
+                            <div className="flex items-center justify-between border-b border-slate-100 pb-5">
+                                <div className="flex items-center gap-3 text-slate-600">
+                                    <CheckCircle size={18} className="text-emerald-500" />
+                                    <span className="font-medium">Delivered orders</span>
+                                </div>
+                                <span className="text-xl font-bold text-slate-800">{summary.delivered_orders || 0}</span>
+                            </div>
+                            <div className="flex items-center justify-between border-b border-slate-100 pb-5">
+                                <div className="flex items-center gap-3 text-slate-600">
+                                    <PackageOpen size={18} className="text-amber-500" />
+                                    <span className="font-medium">Low stock products</span>
+                                </div>
+                                <span className="text-xl font-bold text-slate-800">{summary.low_stock_count || 0}</span>
+                            </div>
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-3 text-slate-600">
+                                    <AlertCircle size={18} className="text-rose-500" />
+                                    <span className="font-medium">Out of stock</span>
+                                </div>
+                                <span className="text-xl font-bold text-slate-800">{summary.out_of_stock_count || 0}</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Chart Panel */}
+                    <div className="flex-1 bg-white/90 backdrop-blur-xl border border-slate-200 shadow-xl shadow-slate-200/50 rounded-3xl p-8 flex flex-col">
+                        <div className="flex items-end justify-between mb-8 pb-4 border-b border-slate-100">
+                            <div>
+                                <h3 className="text-lg font-bold text-slate-800">Revenue trend</h3>
+                                <div className="mt-2 inline-flex items-center gap-2 px-3 py-1 bg-rose-50 border border-rose-100 rounded-full text-xs font-semibold text-rose-600">
+                                    <Calendar size={12} /> {filters.date_from} to {filters.date_to}
+                                </div>
+                            </div>
+                            
+                            <div className="flex bg-slate-100 p-1 rounded-xl">
+                                {['day', 'week', 'month'].map(mode => (
+                                    <button
+                                        key={mode}
+                                        onClick={() => setChartMode(mode)}
+                                        className={`px-4 py-1.5 text-sm font-semibold rounded-lg transition-all ${chartMode === mode ? 'bg-white text-rose-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+                                    >
+                                        {mode.charAt(0).toUpperCase() + mode.slice(1)}
+                                    </button>
                                 ))}
-                                {topProducts.length === 0 && (
-                                    <tr>
-                                        <td style={styles.emptyCell} colSpan={4}>No product sales yet.</td>
-                                    </tr>
-                                )}
-                            </tbody>
-                        </table>
+                            </div>
+                        </div>
+
+                        <div className="flex-1 flex items-end gap-3 min-h-[220px]">
+                            {chartRows.length === 0 ? (
+                                <div className="w-full flex items-center justify-center text-slate-400 font-medium">No sales data in this period.</div>
+                            ) : (
+                                chartRows.map((item, idx) => (
+                                    <div key={idx} className="flex-1 flex flex-col items-center gap-3 group relative h-full justify-end">
+                                        <div 
+                                            className="w-full bg-gradient-to-t from-rose-600 to-rose-400 rounded-t-lg transition-all duration-300 relative"
+                                            style={{ height: `${Math.max(8, (Number(item.revenue || 0) / maxRevenue) * 100)}%` }}
+                                        >
+                                            <div className="absolute -top-10 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-xs font-bold py-1 px-2 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-10 shadow-lg">
+                                                {formatCurrency(item.revenue)}
+                                            </div>
+                                            <div className="absolute inset-x-0 bottom-0 top-0 bg-white/0 group-hover:bg-white/20 transition-colors pointer-events-none rounded-t-lg"></div>
+                                        </div>
+                                        <span className="text-[10px] md:text-xs font-medium text-slate-400">
+                                            {chartMode === 'day' && item.date?.slice(5)}
+                                            {chartMode === 'week' && item.week?.slice(5)}
+                                            {chartMode === 'month' && item.month?.slice(5)}
+                                        </span>
+                                    </div>
+                                ))
+                            )}
+                        </div>
                     </div>
                 </div>
 
-                <div style={styles.alertCard}>
-                    <div style={styles.alertHeader}>
-                        <AlertTriangle size={18} />
-                        <h3>Inventory alerts</h3>
+                {/* Bottom Row - Data Tables */}
+                <div className="flex flex-col lg:flex-row gap-6">
+                    
+                    {/* Top Products Table */}
+                    <div className="lg:w-2/3 bg-white/90 backdrop-blur-xl border border-slate-200 shadow-xl shadow-slate-200/50 rounded-3xl p-8 overflow-hidden">
+                        <div className="flex items-center justify-between mb-6">
+                            <h3 className="text-lg font-bold text-slate-800 font-serif">Top products</h3>
+                            <button className="text-sm font-semibold text-indigo-600 hover:text-indigo-800 flex items-center gap-1">
+                                View all <ArrowUpRight size={16} />
+                            </button>
+                        </div>
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-left border-collapse">
+                                <thead>
+                                    <tr>
+                                        <th className="pb-4 pt-2 border-b border-slate-100 font-bold text-xs uppercase tracking-wider text-slate-500">Product</th>
+                                        <th className="pb-4 pt-2 border-b border-slate-100 font-bold text-xs uppercase tracking-wider text-slate-500">Units</th>
+                                        <th className="pb-4 pt-2 border-b border-slate-100 font-bold text-xs uppercase tracking-wider text-slate-500">Revenue</th>
+                                        <th className="pb-4 pt-2 border-b border-slate-100 font-bold text-xs uppercase tracking-wider text-slate-500">Stock</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {topProducts.length === 0 ? (
+                                        <tr><td colSpan="4" className="py-8 text-center text-slate-400 text-sm">No product sales yet.</td></tr>
+                                    ) : (
+                                        topProducts.map((p) => (
+                                            <tr key={p.product_id} className="hover:bg-slate-50/80 transition-colors border-b border-slate-50 last:border-0">
+                                                <td className="py-4 pr-4 font-medium text-slate-800">{p.name}</td>
+                                                <td className="py-4 px-4 text-slate-600 font-medium">{p.units_sold}</td>
+                                                <td className="py-4 px-4 text-slate-800 font-bold">{formatCurrency(p.revenue)}</td>
+                                                <td className="py-4 pl-4">
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-slate-700 font-medium">{p.stock_quantity}</span>
+                                                        {p.low_stock && (
+                                                            <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 text-[10px] font-bold uppercase tracking-wider border border-amber-200">Low</span>
+                                                        )}
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        ))
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
-                    <div style={styles.alertList}>
-                        {lowStockAlerts.length === 0 && <p style={styles.emptyText}>No low-stock alerts.</p>}
-                        {lowStockAlerts.map((item) => (
-                            <div key={item.product_id} style={styles.alertItem}>
-                                <div>
-                                    <strong>{item.name}</strong>
-                                    <p style={styles.alertMeta}>
-                                        Stock {item.stock_quantity} / Threshold {item.low_stock_threshold}
-                                    </p>
-                                </div>
-                                <span style={item.is_out_of_stock ? styles.alertBad : styles.alertWarn}>
-                                    {item.is_out_of_stock ? 'Out' : 'Low'}
-                                </span>
+
+                    {/* Alerts Log */}
+                    <div className="flex-1 bg-white/90 backdrop-blur-xl border border-slate-200 shadow-xl shadow-slate-200/50 rounded-3xl p-8 flex flex-col">
+                        <div className="flex items-center gap-3 mb-6">
+                            <div className="w-10 h-10 rounded-full bg-rose-50 flex items-center justify-center text-rose-500">
+                                <AlertTriangle size={20} />
                             </div>
-                        ))}
+                            <h3 className="text-lg font-bold text-slate-800 font-serif">Inventory alerts</h3>
+                        </div>
+
+                        <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
+                            {lowStockAlerts.length === 0 ? (
+                                <div className="h-full flex flex-col items-center justify-center text-slate-400 gap-3 py-10">
+                                    <Package size={32} className="opacity-40" />
+                                    <p className="text-sm font-medium">No low-stock alerts.</p>
+                                </div>
+                            ) : (
+                                <div className="space-y-4">
+                                    {lowStockAlerts.map((item) => (
+                                        <div key={item.product_id} className={`p-4 rounded-2xl border ${item.is_out_of_stock ? 'bg-rose-50/50 border-rose-100' : 'bg-amber-50/50 border-amber-100'} flex items-center justify-between`}>
+                                            <div>
+                                                <p className="font-bold text-slate-800 text-base">{item.name}</p>
+                                                <p className="text-xs text-slate-500 mt-1 font-medium">
+                                                    Stock: <span className="text-slate-700">{item.stock_quantity}</span> / Min: {item.low_stock_threshold}
+                                                </p>
+                                            </div>
+                                            <span className={`px-2.5 py-1 rounded-lg text-xs font-bold uppercase tracking-wider ${item.is_out_of_stock ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700'}`}>
+                                                {item.is_out_of_stock ? 'Out' : 'Low'}
+                                            </span>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
                     </div>
+
                 </div>
-            </section>
+            </div>
+            
         </div>
     );
-};
-
-const styles = {
-    page: {
-        background: 'linear-gradient(180deg, #f9f5f0 0%, #ffffff 40%, #fdf9f6 100%)',
-        padding: '2.5rem 2.5rem 4rem',
-        minHeight: '100vh',
-    },
-    hero: {
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
-        gap: '2rem',
-        padding: '2.4rem',
-        borderRadius: '28px',
-        background: '#1f1b16',
-        color: '#fff',
-        marginBottom: '2.5rem',
-        boxShadow: '0 30px 60px rgba(30, 27, 22, 0.28)',
-    },
-    heroContent: { display: 'flex', flexDirection: 'column', gap: '1rem', justifyContent: 'center' },
-    kicker: { textTransform: 'uppercase', letterSpacing: '0.2em', fontSize: '0.75rem', color: 'rgba(255,255,255,0.6)' },
-    title: { fontSize: '2.6rem', fontFamily: 'var(--font-heading)' },
-    subtitle: { color: 'rgba(255,255,255,0.75)', maxWidth: '520px' },
-    filterRow: { display: 'flex', gap: '0.8rem', flexWrap: 'wrap' },
-    filterField: { display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '0.85rem', color: 'rgba(255,255,255,0.8)' },
-    input: { padding: '8px 10px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.25)', background: 'rgba(255,255,255,0.08)', color: '#fff' },
-    heroActions: { display: 'flex', gap: '0.8rem', flexWrap: 'wrap', marginTop: '0.5rem' },
-    primaryBtn: { background: 'var(--color-primary)', color: '#fff', border: 'none', padding: '12px 18px', borderRadius: '999px', fontWeight: '600', cursor: 'pointer' },
-    secondaryBtn: { background: 'transparent', color: '#fff', border: '1px solid rgba(255,255,255,0.3)', padding: '12px 18px', borderRadius: '999px', fontWeight: '600', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '8px' },
-    heroPanel: { display: 'grid', gap: '1rem', alignContent: 'center' },
-    panelCard: { display: 'flex', alignItems: 'center', gap: '1rem', padding: '1rem 1.2rem', borderRadius: '16px', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)' },
-    panelIcon: { width: '40px', height: '40px', borderRadius: '12px', background: 'rgba(255,255,255,0.18)', display: 'flex', alignItems: 'center', justifyContent: 'center' },
-    panelLabel: { fontSize: '0.85rem', color: 'rgba(255,255,255,0.7)' },
-    panelValue: { fontSize: '1.4rem', fontWeight: 700 },
-
-    reportSection: { marginBottom: '1.6rem' },
-    sectionHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.8rem' },
-    sectionTitle: { fontSize: '1.7rem', color: 'var(--color-text)' },
-    sectionSubtitle: { color: 'var(--color-text-light)' },
-    reportBadge: { display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '8px 14px', borderRadius: '999px', background: 'rgba(225,29,46,0.12)', color: 'var(--color-accent)', border: '1px solid rgba(225,29,46,0.2)' },
-    reportGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.2rem' },
-    reportCard: { background: '#fff', padding: '1.5rem', borderRadius: '20px', border: '1px solid var(--color-border)', boxShadow: 'var(--shadow-sm)', display: 'grid', gap: '1rem' },
-    reportMetric: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '1rem', color: 'var(--color-text-light)' },
-    chartCard: { background: '#fff', padding: '1.5rem', borderRadius: '20px', border: '1px solid var(--color-border)', boxShadow: 'var(--shadow-sm)' },
-    chartHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '1rem' },
-    chartToggle: { display: 'inline-flex', gap: '0.4rem', background: 'var(--color-surface-2)', borderRadius: '999px', padding: '4px', border: '1px solid var(--color-border)' },
-    toggleBtn: { border: 'none', background: 'transparent', padding: '6px 10px', borderRadius: '999px', cursor: 'pointer', color: 'var(--color-text-light)', fontWeight: 600 },
-    toggleActive: { border: 'none', background: 'rgba(225,29,46,0.12)', padding: '6px 10px', borderRadius: '999px', cursor: 'pointer', color: 'var(--color-primary)', fontWeight: 700 },
-    chartNote: { color: 'var(--color-text-light)', fontSize: '0.85rem' },
-    chartBars: { display: 'flex', gap: '0.55rem', alignItems: 'flex-end', height: '170px' },
-    chartBarWrap: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.35rem', flex: 1, fontSize: '0.75rem', color: 'var(--color-text-light)' },
-    chartBar: { width: '100%', borderRadius: '10px 10px 6px 6px', background: 'linear-gradient(180deg, var(--color-primary), var(--color-accent))', minHeight: '10px' },
-
-    tableSection: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1.2rem' },
-    tableCard: { background: '#fff', border: '1px solid var(--color-border)', borderRadius: '20px', boxShadow: 'var(--shadow-sm)', padding: '1.2rem' },
-    tableTitle: { marginBottom: '0.7rem' },
-    tableWrap: { overflowX: 'auto' },
-    table: { width: '100%', borderCollapse: 'collapse' },
-    th: { textAlign: 'left', padding: '10px 8px', borderBottom: '1px solid var(--color-border)', color: 'var(--color-text-light)', fontSize: '0.8rem', textTransform: 'uppercase' },
-    td: { padding: '10px 8px', borderBottom: '1px solid var(--color-border)' },
-    emptyCell: { padding: '1rem', textAlign: 'center', color: 'var(--color-text-light)' },
-    lowTag: { marginLeft: '8px', background: 'rgba(239,68,68,0.14)', color: '#dc2626', padding: '2px 8px', borderRadius: '999px', fontSize: '0.72rem', fontWeight: '700' },
-
-    alertCard: { background: '#fff', border: '1px solid var(--color-border)', borderRadius: '20px', boxShadow: 'var(--shadow-sm)', padding: '1.2rem' },
-    alertHeader: { display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '0.7rem' },
-    alertList: { display: 'flex', flexDirection: 'column', gap: '0.6rem' },
-    alertItem: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', border: '1px solid var(--color-border)', borderRadius: '12px', padding: '10px' },
-    alertMeta: { color: 'var(--color-text-light)', fontSize: '0.82rem', marginTop: '2px' },
-    alertWarn: { background: 'rgba(245,158,11,0.14)', color: '#b45309', padding: '3px 8px', borderRadius: '999px', fontSize: '0.72rem', fontWeight: '700' },
-    alertBad: { background: 'rgba(239,68,68,0.14)', color: '#dc2626', padding: '3px 8px', borderRadius: '999px', fontSize: '0.72rem', fontWeight: '700' },
-    emptyText: { color: 'var(--color-text-light)', fontSize: '0.9rem' },
 };
 
 export default ShopOwnerDashboard;

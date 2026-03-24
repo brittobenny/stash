@@ -16,6 +16,7 @@ import { downloadRecipePdf } from '../utils/recipePdf';
 import cookLoaderPrimary from '../assets/cook-loader-primary.mp4';
 import cookLoaderSecondary from '../assets/cook-loader-secondary.mp4';
 import '../styles/global.css';
+import '../styles/cook.css';
 
 let cookPageMemory = null;
 const LOADING_PHASES = [
@@ -241,7 +242,7 @@ const Cook = () => {
     const previewLoaderVideo = loadingPhaseIndex % 2 === 0 ? cookLoaderSecondary : cookLoaderPrimary;
 
     return (
-        <div style={styles.page}>
+        <div style={styles.page} className="cook-page">
             <div style={styles.container}>
                 <section style={styles.headerCard} className="fade-up">
                     <div style={styles.headerText}>
@@ -573,7 +574,9 @@ const styles = {
         width: '100%',
         minHeight: '100vh',
         padding: '1.1rem 1.4rem 2rem',
-        background: 'linear-gradient(180deg, #f4efe6 0%, #f8f5ef 16%, #f3f0eb 100%)',
+        background: 'transparent',
+        position: 'relative',
+        isolation: 'isolate',
     },
     container: {
         width: '100%',

@@ -1,0 +1,67 @@
+.cook-page {
+  position: relative;
+  min-height: 100vh;
+  overflow: hidden;
+  isolation: isolate;
+  background:
+    radial-gradient(circle at 12% 16%, rgba(176, 255, 201, 0.48), transparent 34%),
+    radial-gradient(circle at 78% 12%, rgba(255, 244, 179, 0.56), transparent 32%),
+    radial-gradient(circle at 88% 72%, rgba(197, 255, 187, 0.44), transparent 26%),
+    radial-gradient(circle at 18% 74%, rgba(255, 236, 170, 0.4), transparent 30%),
+    linear-gradient(135deg, #ffffff 0%, #f5fff3 38%, #fff9e8 70%, #ffffff 100%);
+  background-size: 180% 180%;
+  animation: cookSkyDrift 32s cubic-bezier(0.42, 0, 0.18, 1) infinite alternate;
+}
+
+.cook-page::before,
+.cook-page::after {
+  content: "";
+  position: absolute;
+  border-radius: 999px;
+  pointer-events: none;
+  filter: blur(12px);
+  mix-blend-mode: screen;
+}
+
+.cook-page::before {
+  width: 560px;
+  height: 560px;
+  top: -200px;
+  left: -180px;
+  background: radial-gradient(circle, rgba(180, 255, 210, 0.5) 0%, rgba(180, 255, 210, 0.16) 52%, transparent 76%);
+  animation: cookBlobGreen 30s cubic-bezier(0.42, 0, 0.18, 1) infinite alternate;
+}
+
+.cook-page::after {
+  width: 520px;
+  height: 520px;
+  right: -160px;
+  bottom: -190px;
+  background: radial-gradient(circle, rgba(255, 239, 178, 0.5) 0%, rgba(255, 239, 178, 0.18) 50%, transparent 76%);
+  animation: cookBlobYellow 34s cubic-bezier(0.42, 0, 0.18, 1) infinite alternate;
+}
+
+@keyframes cookSkyDrift {
+  0% { background-position: 0% 8%; }
+  50% { background-position: 46% 38%; }
+  100% { background-position: 92% 68%; }
+}
+
+@keyframes cookBlobGreen {
+  0% { transform: translate3d(0, 0, 0) scale(1); opacity: 0.78; }
+  100% { transform: translate3d(110px, 80px, 0) scale(1.1); opacity: 0.95; }
+}
+
+@keyframes cookBlobYellow {
+  0% { transform: translate3d(0, 0, 0) scale(1); opacity: 0.76; }
+  100% { transform: translate3d(-130px, -90px, 0) scale(1.12); opacity: 0.94; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cook-page,
+  .cook-page::before,
+  .cook-page::after {
+    animation: none;
+  }
+}
+

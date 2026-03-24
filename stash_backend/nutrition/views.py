@@ -1,4 +1,4 @@
-from datetime import timedelta, datetime
+from datetime import timedelta, datetime, time
 
 from django.utils import timezone
 from rest_framework.decorators import api_view, permission_classes
@@ -36,6 +36,13 @@ def _parse_date(value):
         return datetime.strptime(value, "%Y-%m-%d").date()
     except (TypeError, ValueError):
         return None
+
+
+def _day_bounds(day):
+    tz = timezone.get_current_timezone()
+    start = timezone.make_aware(datetime.combine(day, time.min), tz)
+    end = timezone.make_aware(datetime.combine(day, time.max), tz)
+    return start, end
 
 
 @api_view(["GET"])
@@ -100,6 +107,18 @@ def profile_summary(request):
     active_score = today_score or DailyNutritionScore.objects.filter(user=request.user).order_by("-date").first()
     week_score = WeeklyNutritionScore.objects.filter(user=request.user, week_start=week_start).first()
     latest_reward = NutritionRewardEvent.objects.filter(user=request.user).order_by("-awarded_at").first()
+
+    # If we have cooked logs for the local day but no daily score yet, rebuild once.
+    if not today_score:
+        start_dt, end_dt = _day_bounds(today)
+        has_today_logs = CookedRecipeLog.objects.filter(
+            user=request.user,
+            cooked_at__range=(start_dt, end_dt),
+        ).exists()
+        if has_today_logs:
+            today_score = recompute_daily_score(request.user, today)
+            week_score = recompute_weekly_score(request.user, today)
+            active_score = today_score
 
     data = NutritionGamificationProfileSerializer(profile).data
     goal_progress = {}

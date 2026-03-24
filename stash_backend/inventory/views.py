@@ -40,6 +40,7 @@ def _normalize_ingredient_category(raw_category: str) -> str:
         "meat": "Meat",
         "seafood": "Meat",
         "dairy": "Dairy",
+        "diary": "Dairy",
         "grain": "Grain",
         "grains": "Grain",
         "spice": "Spice",
@@ -51,12 +52,19 @@ def _normalize_ingredient_category(raw_category: str) -> str:
     return mapping.get(value, "Other")
 
 
+def _get_ingredient_csv_path() -> Path:
+    pantry_csv = Path(settings.BASE_DIR) / "data" / "pantry.csv"
+    if pantry_csv.exists():
+        return pantry_csv
+    return Path(settings.BASE_DIR) / "data" / "ingredients_master.csv"
+
+
 def _seed_ingredients_from_csv_if_empty() -> None:
     """
     Load ingredient master data lazily when DB is empty.
     This keeps first-run environments working without a manual management command.
     """
-    csv_path = Path(settings.BASE_DIR) / "data" / "ingredients_master.csv"
+    csv_path = _get_ingredient_csv_path()
     if not csv_path.exists():
         return
 
@@ -92,9 +100,29 @@ def _seed_ingredients_from_csv_if_empty() -> None:
     except Exception:
         embedding_lookup = {}
 
-    rows = []
+    names = [row["name"] for row in parsed_rows]
+    existing = {ing.name: ing for ing in Ingredient.objects.filter(name__in=names)}
+
+    to_update = []
+    to_create = []
     for row in parsed_rows:
-        rows.append(
+        existing_obj = existing.get(row["name"])
+        if existing_obj:
+            changed = False
+            if existing_obj.category != row["category"]:
+                existing_obj.category = row["category"]
+                changed = True
+            if existing_obj.default_unit != row["default_unit"]:
+                existing_obj.default_unit = row["default_unit"]
+                changed = True
+            if (existing_obj.image_url or "") != (row["image_url"] or ""):
+                existing_obj.image_url = row["image_url"]
+                changed = True
+            if changed:
+                to_update.append(existing_obj)
+            continue
+
+        to_create.append(
             Ingredient(
                 name=row["name"],
                 category=row["category"],
@@ -104,12 +132,14 @@ def _seed_ingredients_from_csv_if_empty() -> None:
             )
         )
 
-    # Keep DB aligned with CSV without deleting user-linked rows.
-    Ingredient.objects.bulk_create(rows, ignore_conflicts=True)
+    if to_create:
+        Ingredient.objects.bulk_create(to_create, ignore_conflicts=True)
+    if to_update:
+        Ingredient.objects.bulk_update(to_update, ["category", "default_unit", "image_url"])
 
 
 def _load_master_ingredient_names() -> set[str]:
-    csv_path = Path(settings.BASE_DIR) / "data" / "ingredients_master.csv"
+    csv_path = _get_ingredient_csv_path()
     if not csv_path.exists():
         return set()
 

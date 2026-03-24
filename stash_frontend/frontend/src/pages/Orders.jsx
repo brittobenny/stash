@@ -230,70 +230,121 @@ const Orders = () => {
             )}
 
             {showFeedback && selectedOrder && (
-                <div style={styles.modalOverlay}>
-                    <div style={styles.modalCard}>
-                        <div style={styles.modalHeader}>
+                <div className="fixed inset-0 flex items-center justify-center z-[200] p-4 bg-black/40 backdrop-blur-sm transition-all duration-300">
+                    <div className="w-full max-w-xl bg-white/90 backdrop-blur-xl rounded-2xl p-6 sm:p-8 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.3)] transform transition-all duration-300 scale-100 flex flex-col max-h-[90vh]">
+                        <div className="flex justify-between items-start mb-6 border-b border-gray-100 pb-4 shrink-0">
                             <div>
-                                <h3>Order #{selectedOrder.id}</h3>
-                                <p style={styles.modalSub}>Tell us about the delivery and product quality.</p>
+                                <h3 className="text-2xl font-bold font-['Playfair_Display'] text-gray-900 bg-clip-text text-transparent bg-gradient-to-r from-red-600 to-red-400">
+                                    Rate Order #{selectedOrder.id}
+                                </h3>
+                                <p className="text-gray-500 mt-1 text-sm font-medium">Tell us about your culinary experience</p>
                             </div>
-                            <button style={styles.modalClose} onClick={() => setShowFeedback(false)}>X</button>
+                            <button
+                                className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors duration-200"
+                                onClick={() => setShowFeedback(false)}
+                            >
+                                <XCircle size={24} className="stroke-[1.5]" />
+                            </button>
                         </div>
-                        {feedbackError && <div style={styles.errorBanner}>{feedbackError}</div>}
-                        {feedbackMessage && <div style={styles.successBanner}>{feedbackMessage}</div>}
-                        <div style={styles.modalItems}>
-                            {(selectedOrder.items || []).map((item) => (
-                                <div key={item.id} style={styles.modalItemRow}>
-                                    <span>{item.product?.name}</span>
-                                    <span>x{item.quantity}</span>
+                        
+                        <div className="overflow-y-auto pr-2 custom-scrollbar">
+                            {feedbackError && (
+                                <div className="mb-6 p-4 rounded-xl bg-red-50/80 border border-red-100 text-red-600 text-sm font-medium flex items-center gap-2 animate-pulse">
+                                    <XCircle size={18} /> {feedbackError}
                                 </div>
-                            ))}
-                        </div>
-                        <div style={styles.modalForm}>
-                            <div style={styles.ratingBlock}>
-                                <span style={styles.ratingLabel}>Rating</span>
-                                <div style={styles.ratingRow}>
-                                    {[1, 2, 3, 4, 5].map((value) => (
-                                        <button
-                                            key={value}
-                                            type="button"
-                                            style={{
-                                                ...styles.ratingStar,
-                                                ...(value <= feedbackForm.rating ? styles.ratingStarActive : {})
-                                            }}
-                                            onClick={() =>
-                                                setFeedbackForm((prev) => ({ ...prev, rating: value }))
-                                            }
-                                            aria-label={`${value} star`}
-                                        >
-                                            <Star size={16} />
-                                        </button>
+                            )}
+                            {feedbackMessage && (
+                                <div className="mb-6 p-4 rounded-xl bg-green-50/80 border border-green-100 text-green-700 text-sm font-medium flex items-center gap-2">
+                                    <PackageCheck size={18} /> {feedbackMessage}
+                                </div>
+                            )}
+
+                            <div className="mb-6 bg-gray-50 rounded-xl p-4 border border-gray-100">
+                                <h4 className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-3">Order Items</h4>
+                                <div className="flex flex-col gap-2">
+                                    {(selectedOrder.items || []).map((item) => (
+                                        <div key={item.id} className="flex justify-between text-sm font-medium text-gray-700">
+                                            <span className="flex items-center gap-2">
+                                                <span className="w-1.5 h-1.5 rounded-full bg-red-400"></span>
+                                                {item.product?.name}
+                                            </span>
+                                            <span className="text-gray-500 bg-white px-2 py-0.5 rounded-md border border-gray-100 shadow-sm">x{item.quantity}</span>
+                                        </div>
                                     ))}
                                 </div>
-                                <span style={styles.ratingHint}>Tap to rate your delivery and quality.</span>
                             </div>
-                            <label>
-                                Title
-                                <input
-                                    value={feedbackForm.title}
-                                    onChange={(e) => setFeedbackForm((prev) => ({ ...prev, title: e.target.value }))}
-                                    placeholder="Short headline"
-                                />
-                            </label>
-                            <label style={{ gridColumn: '1/-1' }}>
-                                Feedback
-                                <textarea
-                                    rows="4"
-                                    value={feedbackForm.message}
-                                    onChange={(e) => setFeedbackForm((prev) => ({ ...prev, message: e.target.value }))}
-                                    placeholder="Share details about the order quality, delivery, or packaging."
-                                />
-                            </label>
+
+                            <div className="flex flex-col gap-6 pb-2">
+                                <div className="flex flex-col gap-3">
+                                    <label className="text-sm font-bold text-gray-700">Experience Rating</label>
+                                    <div className="flex gap-2 sm:gap-4">
+                                        {[1, 2, 3, 4, 5].map((value) => (
+                                            <button
+                                                key={value}
+                                                type="button"
+                                                className={`w-12 h-12 sm:w-14 sm:h-14 rounded-2xl flex items-center justify-center transition-all duration-300 hover:scale-110 active:scale-95 ${
+                                                    value <= feedbackForm.rating 
+                                                        ? 'bg-gradient-to-br from-red-500 to-red-600 text-white shadow-lg shadow-red-500/30' 
+                                                        : 'bg-white text-gray-300 border border-gray-200 hover:border-red-300 hover:text-red-300'
+                                                }`}
+                                                onClick={() => setFeedbackForm((prev) => ({ ...prev, rating: value }))}
+                                                aria-label={`${value} star`}
+                                            >
+                                                <Star size={24} className={value <= feedbackForm.rating ? 'fill-white' : 'fill-transparent'} />
+                                            </button>
+                                        ))}
+                                    </div>
+                                    <span className="text-xs text-gray-400 font-medium tracking-wide">
+                                        {feedbackForm.rating === 5 ? 'Excellent!' : feedbackForm.rating === 4 ? 'Good!' : feedbackForm.rating === 3 ? 'Okay' : feedbackForm.rating === 2 ? 'Poor' : 'Terrible'} - Tap a star to rate
+                                    </span>
+                                </div>
+
+                                <div className="flex flex-col gap-2">
+                                    <label className="text-sm font-bold text-gray-700">Highlights</label>
+                                    <input
+                                        className="w-full bg-white border border-gray-200 rounded-xl px-4 py-3 text-sm font-medium text-gray-800 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 transition-all placeholder:text-gray-400 placeholder:font-normal"
+                                        value={feedbackForm.title}
+                                        onChange={(e) => setFeedbackForm((prev) => ({ ...prev, title: e.target.value }))}
+                                        placeholder="e.g., Amazing packaging, delicious food!"
+                                    />
+                                </div>
+
+                                <div className="flex flex-col gap-2">
+                                    <label className="text-sm font-bold text-gray-700">Detailed Review</label>
+                                    <textarea
+                                        rows="4"
+                                        className="w-full bg-white border border-gray-200 rounded-xl px-4 py-3 text-sm font-medium text-gray-800 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 transition-all placeholder:text-gray-400 placeholder:font-normal resize-none"
+                                        value={feedbackForm.message}
+                                        onChange={(e) => setFeedbackForm((prev) => ({ ...prev, message: e.target.value }))}
+                                        placeholder="Share details about the quality, flavor, and delivery experience..."
+                                    />
+                                </div>
+                            </div>
                         </div>
-                        <div style={styles.modalActions}>
-                            <button style={styles.linkBtn} onClick={() => setShowFeedback(false)}>Cancel</button>
-                            <button style={styles.actionBtn} onClick={submitFeedback} disabled={feedbackLoading}>
-                                {feedbackLoading ? 'Submitting...' : 'Submit Feedback'}
+
+                        <div className="flex justify-end gap-3 mt-6 pt-6 border-t border-gray-100 shrink-0">
+                            <button 
+                                className="px-6 py-3 rounded-xl text-sm font-bold text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+                                onClick={() => setShowFeedback(false)}
+                            >
+                                Cancel
+                            </button>
+                            <button 
+                                className="px-6 py-3 rounded-xl text-sm font-bold text-white bg-gradient-to-r from-red-600 to-red-500 hover:from-red-700 hover:to-red-600 shadow-lg shadow-red-500/25 hover:shadow-red-500/40 transition-all transform hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                                onClick={submitFeedback} 
+                                disabled={feedbackLoading}
+                            >
+                                {feedbackLoading ? (
+                                    <>
+                                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                                        <span>Submitting...</span>
+                                    </>
+                                ) : (
+                                    <>
+                                        <MessageSquare size={18} />
+                                        <span>Submit Review</span>
+                                    </>
+                                )}
                             </button>
                         </div>
                     </div>

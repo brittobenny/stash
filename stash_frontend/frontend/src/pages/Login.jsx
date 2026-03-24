@@ -55,6 +55,12 @@ const Login = () => {
         const username = formData.username.trim();
         const password = formData.password;
         if (!username || !password || loading) return;
+
+        if (!EMAIL_PATTERN.test(username)) {
+            setError('Please enter a valid email format.');
+            return;
+        }
+
         const signature = `${username}::${password}`;
         attemptedSignatureRef.current = signature;
         await executeLogin(username, password);

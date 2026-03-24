@@ -54,7 +54,12 @@ const CustomerDashboard = () => {
             alert(`${product.name} added to cart!`);
             fetchCart(); // Refresh cart
         } catch (err) {
-            alert('Failed to add to cart');
+            const msg = err.response?.data?.error;
+            if (msg === 'profile_incomplete') {
+                alert('Please complete your profile (address & location) to add items to cart.');
+            } else {
+                alert(msg || 'Failed to add to cart');
+            }
         }
     };
 

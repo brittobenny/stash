@@ -144,7 +144,7 @@ const ShopOwnerFeedback = () => {
                                         <div style={styles.detailRow}>
                                             <Truck size={16} /> Status: {orderDetail.status}
                                         </div>
-                                        <div style={styles.detailRow}>Total: ${orderDetail.total_amount}</div>
+                                        <div style={styles.detailRow}>Total: ₹{orderDetail.total_amount}</div>
                                         <div style={styles.detailRow}>Delivery address: {orderDetail.user_address || '—'}</div>
                                         <div style={styles.detailRow}>Phone: {orderDetail.user_phone || '—'}</div>
                                         <div style={styles.detailItems}>

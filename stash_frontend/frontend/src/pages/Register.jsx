@@ -18,14 +18,35 @@ const Register = () => {
     const [success, setSuccess] = useState('');
     const [loading, setLoading] = useState(false);
 
+    const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const PHONE_PATTERN = /^[0-9]{10,15}$/;
+
     const handleSubmit = async (e) => {
         e.preventDefault();
         setError('');
         setSuccess('');
+
+        if (formData.password.length < 6) {
+            setError('Password must be at least 6 characters.');
+            return;
+        }
+        if (!EMAIL_PATTERN.test(formData.email.trim())) {
+            setError('Please enter a valid email format.');
+            return;
+        }
+        if (!PHONE_PATTERN.test(formData.mobile_number.trim())) {
+            setError('Mobile number must be between 10 and 15 digits.');
+            return;
+        }
+
         setLoading(true);
 
         try {
-            await authService.register(formData);
+            await authService.register({
+                ...formData,
+                email: formData.email.trim(),
+                mobile_number: formData.mobile_number.trim(),
+            });
             setSuccess('Registration successful! Redirecting to login...');
             setTimeout(() => {
                 navigate('/login');
@@ -33,7 +54,19 @@ const Register = () => {
         } catch (err) {
             console.error(err);
             // Extract error message if available from backend response
-            const msg = err.response?.data?.error || JSON.stringify(err.response?.data) || 'Registration failed. Please try again.';
+            let msg = 'Registration failed. Please try again.';
+            if (err.response?.data) {
+                if (typeof err.response.data === 'object' && !Array.isArray(err.response.data)) {
+                    // Extract the first error message from dict
+                    const keys = Object.keys(err.response.data);
+                    if (keys.length > 0) {
+                        const firstError = err.response.data[keys[0]];
+                        msg = Array.isArray(firstError) ? firstError[0] : (err.response.data.error || JSON.stringify(err.response.data));
+                    }
+                } else {
+                    msg = err.response.data.error || JSON.stringify(err.response.data);
+                }
+            }
             setError(msg);
         } finally {
             setLoading(false);

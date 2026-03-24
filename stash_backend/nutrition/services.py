@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import timedelta, datetime, time
 
 from django.db import transaction
 from django.db.models import Sum
@@ -460,21 +460,19 @@ def _compute_daily_score(totals: dict, meal_entries: list[dict] | None = None):
     average_meal_score = sum(meal_scores) / max(meal_count, 1)
     balanced_ratio = balanced_count / max(meal_count, 1)
     junk_ratio = junk_count / max(meal_count, 1)
-    consistency_bonus = 5.0 if balanced_ratio >= 0.6 and junk_count == 0 else 0.0
-
-    score = (average_meal_score * 0.7) + (balanced_ratio * 25.0) - (junk_ratio * 15.0) + consistency_bonus
-    final_score = int(round(_clamp(score, 0.0, 100.0)))
-    balanced = balanced_ratio >= 0.6 and junk_ratio <= 0.34 and final_score >= 70
+    cumulative_raw = sum(meal_scores)
+    final_score = int(round(_clamp(cumulative_raw, 0.0, 100.0)))
+    balanced = final_score >= 70
 
     breakdown = {
-        "mode": "daily_meal_quality",
+        "mode": "daily_cumulative",
         "meal_count": meal_count,
         "balanced_meals": balanced_count,
         "junk_meals": junk_count,
         "balanced_ratio": round(balanced_ratio, 2),
         "junk_ratio": round(junk_ratio, 2),
         "average_meal_score": round(average_meal_score, 2),
-        "consistency_bonus": consistency_bonus,
+        "cumulative_score_raw": round(cumulative_raw, 2),
         "meals": meal_breakdowns,
         "totals": {
             "calories": round(_to_float(totals.get("calories")), 2),
@@ -491,6 +489,13 @@ def _week_bounds(day):
     week_start = day - timedelta(days=day.weekday())
     week_end = week_start + timedelta(days=6)
     return week_start, week_end
+
+
+def _day_bounds(day):
+    tz = timezone.get_current_timezone()
+    start = timezone.make_aware(datetime.combine(day, time.min), tz)
+    end = timezone.make_aware(datetime.combine(day, time.max), tz)
+    return start, end
 
 
 def _get_or_create_profile(user):
@@ -539,9 +544,12 @@ def _add_reward(user, event_type, title, description="", points=0, reference_dat
 
 
 def recompute_daily_score(user, day):
-    logs = list(CookedRecipeLog.objects.filter(user=user, cooked_at__date=day).order_by("cooked_at"))
+    start_dt, end_dt = _day_bounds(day)
+    logs = list(
+        CookedRecipeLog.objects.filter(user=user, cooked_at__range=(start_dt, end_dt)).order_by("cooked_at")
+    )
 
-    aggregates = CookedRecipeLog.objects.filter(user=user, cooked_at__date=day).aggregate(
+    aggregates = CookedRecipeLog.objects.filter(user=user, cooked_at__range=(start_dt, end_dt)).aggregate(
         calories=Sum("calories"),
         protein=Sum("protein"),
         carbs=Sum("carbs"),

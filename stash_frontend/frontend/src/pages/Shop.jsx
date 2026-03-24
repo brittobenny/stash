@@ -270,15 +270,15 @@ const Shop = () => {
                 <div className="shop-mall__banner-card">
                     <div>
                         <strong>Veggie starter kit</strong>
-                        <span>$18.00</span>
+                        <span>₹18.00</span>
                     </div>
                     <div>
                         <strong>Weekly grains pack</strong>
-                        <span>$24.00</span>
+                        <span>₹24.00</span>
                     </div>
                     <div>
                         <strong>Dairy essentials</strong>
-                        <span>$12.00</span>
+                        <span>₹12.00</span>
                     </div>
                 </div>
             </section>
@@ -335,7 +335,7 @@ const Shop = () => {
                     </div>
                     <div className="shop-mall__promo">
                         <strong>Free delivery</strong>
-                        <span>Orders above $40</span>
+                        <span>Orders above ₹40</span>
                     </div>
                 </aside>
 

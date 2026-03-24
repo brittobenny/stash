@@ -248,6 +248,7 @@ class AdminUserListView(APIView):
     permission_classes = [IsAdmin]
 
     def get(self, request):
+        from nutrition.models import CookedRecipeLog
         role = request.query_params.get("role")
         qs = UserProfile.objects.select_related("user").all()
         if role:
@@ -273,6 +274,7 @@ class AdminUserListView(APIView):
                 "date_joined": user.date_joined.isoformat() if user.date_joined else None,
                 "last_login": user.last_login.isoformat() if user.last_login else None,
                 "profile_completed": bool(profile.address and profile.location),
+                "cooked_count": CookedRecipeLog.objects.filter(user=user).count(),
             })
         return Response(data, status=status.HTTP_200_OK)
 
@@ -286,8 +288,42 @@ class AdminUserUpdateView(APIView):
             return Response({"error": "User not found"}, status=status.HTTP_404_NOT_FOUND)
 
         user = profile.user
+        name = request.data.get("name")
+        email = request.data.get("email")
+        mobile_number = request.data.get("mobile_number")
+        location = request.data.get("location")
+        address = request.data.get("address")
+        store_name = request.data.get("store_name")
         role = request.data.get("role")
         is_active = request.data.get("is_active")
+
+        if isinstance(name, str) and name.strip():
+            user.first_name = name.strip()
+
+        if isinstance(email, str) and email.strip():
+            normalized_email = email.strip().lower()
+            if normalized_email != user.email:
+                if User.objects.filter(username=normalized_email).exclude(id=user.id).exists():
+                    return Response({"error": "Email already in use."}, status=status.HTTP_400_BAD_REQUEST)
+                user.email = normalized_email
+                user.username = normalized_email
+
+        if isinstance(mobile_number, str):
+            profile.mobile_number = mobile_number.strip()
+
+        if isinstance(location, str):
+            profile.location = location.strip()
+
+        if isinstance(address, str):
+            profile.address = address.strip()
+
+        if profile.role == "shopowner" and isinstance(store_name, str):
+            shop_profile = ShopProfile.objects.filter(owner=user).first()
+            if not shop_profile:
+                shop_profile = ShopProfile.objects.create(owner=user, store_name=store_name.strip() or user.first_name)
+            else:
+                shop_profile.store_name = store_name.strip()
+                shop_profile.save(update_fields=["store_name"])
 
         if role in {"customer", "shopowner", "admin"}:
             profile.role = role
@@ -304,6 +340,13 @@ class AdminUserUpdateView(APIView):
             user.is_active = is_active
             user.save(update_fields=["is_active"])
 
+        user.save(update_fields=["first_name", "email", "username"])
+        profile.save(update_fields=["mobile_number", "location", "address"])
+
+        shop_profile = None
+        if profile.role == "shopowner":
+            shop_profile = ShopProfile.objects.filter(owner=user).first()
+
         return Response({
             "id": user.id,
             "email": user.email,
@@ -312,6 +355,7 @@ class AdminUserUpdateView(APIView):
             "mobile_number": profile.mobile_number,
             "location": profile.location,
             "address": profile.address,
+            "store_name": shop_profile.store_name if shop_profile else "",
             "is_active": user.is_active,
             "is_staff": user.is_staff,
             "is_superuser": user.is_superuser,
